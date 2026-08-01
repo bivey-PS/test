@@ -10,6 +10,7 @@ const {
   openShadybrookLumberRfp,
   openQuotesTab,
   openCancerTab,
+  verifyReconstructiveSurgeryBenefit,
   saveRecording,
 } = require('./lib/plansight-login');
 
@@ -70,6 +71,7 @@ async function runLoginAutomation() {
     const shadybrookRfp = await openShadybrookLumberRfp(page);
     const quotes = await openQuotesTab(page);
     const cancer = await openCancerTab(page);
+    const benefit = await verifyReconstructiveSurgeryBenefit(page);
 
     await page.screenshot({
       path: path.join(OUTPUT_DIR, 'login-success.png'),
@@ -91,6 +93,7 @@ async function runLoginAutomation() {
       shadybrookRfpUrl: shadybrookRfp.rfpUrl,
       quotesUrl: quotes.quotesUrl,
       cancerQuotesUrl: cancer.cancerQuotesUrl,
+      reconstructiveSurgeryVerified: benefit.verified,
       timestamp: new Date().toISOString(),
       success: true,
     };

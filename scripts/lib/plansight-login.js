@@ -272,6 +272,42 @@ async function openCancerTab(page) {
   };
 }
 
+async function verifyReconstructiveSurgeryBenefit(page) {
+  console.log('Verifying Reconstructive Surgery in Benefits Plan Group column');
+
+  await page.getByText('Plan Group').first().waitFor({ timeout: 30000 });
+  await page.getByText('Benefits').first().waitFor({ timeout: 30000 });
+
+  const reconstructiveSurgery = page.getByText('Reconstructive Surgery', { exact: true });
+  let found = false;
+
+  for (let attempt = 0; attempt < 30; attempt++) {
+    if ((await reconstructiveSurgery.count()) > 0) {
+      await reconstructiveSurgery.first().scrollIntoViewIfNeeded();
+      if (await reconstructiveSurgery.first().isVisible()) {
+        found = true;
+        break;
+      }
+    }
+
+    await page.mouse.wheel(0, 400);
+    await page.waitForTimeout(300);
+  }
+
+  if (!found) {
+    throw new Error(
+      'Could not find "Reconstructive Surgery" row in the Benefits Plan Group column',
+    );
+  }
+
+  console.log('Verified Reconstructive Surgery row in Benefits section');
+
+  return {
+    verified: true,
+    planGroupRow: 'Reconstructive Surgery',
+  };
+}
+
 async function saveRecording(page, outputName = 'login-recording') {
   const video = page.video();
   if (!video) {
@@ -305,5 +341,6 @@ module.exports = {
   openShadybrookLumberRfp,
   openQuotesTab,
   openCancerTab,
+  verifyReconstructiveSurgeryBenefit,
   saveRecording,
 };
