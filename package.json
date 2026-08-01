@@ -8,7 +8,8 @@
     "test:ui": "playwright test --ui",
     "test:report": "playwright show-report",
     "test:debug": "playwright test --debug",
-    "automate": "node scripts/website-automation.js"
+    "automate": "node scripts/website-automation.js",
+    "automate:login": "node scripts/login-automation.js"
   },
   "repository": {
     "type": "git",
