@@ -15,30 +15,69 @@ function requireCredentials() {
     console.error('  BASE_URL=https://test.plansight.com (optional, this is the default)');
     process.exit(1);
   }
+
+  if (!LOGIN_USERNAME.includes('@')) {
+    console.error('LOGIN_USERNAME must be a full email address (Auth0 rejects usernames without @).');
+    console.error(`Received: ${LOGIN_USERNAME}`);
+    process.exit(1);
+  }
+}
+
+async function getVisibleAuthError(page) {
+  const errorLocator = page.locator(
+    '[role="alert"], .ulp-input-error-message, .error-message',
+  );
+  const count = await errorLocator.count();
+  if (count === 0) {
+    return null;
+  }
+
+  const messages = await errorLocator.allTextContents();
+  const cleaned = messages.map((text) => text.trim()).filter(Boolean);
+  return cleaned[0] || null;
+}
+
+async function clickContinue(page) {
+  await page.getByRole('button', { name: 'Continue' }).click();
 }
 
 async function login(page) {
   console.log(`Opening ${BASE_URL}`);
   await page.goto(BASE_URL, { waitUntil: 'networkidle', timeout: 60000 });
 
-  // Auth0 redirects to the identifier step.
   await page.waitForURL(/\/u\/login\/identifier/, { timeout: 30000 });
   console.log('On login identifier page');
 
   await page.locator('#username').fill(LOGIN_USERNAME);
-  await page.getByRole('button', { name: 'Continue' }).click();
+  await clickContinue(page);
 
-  await page.waitForURL(/\/u\/login\/password/, { timeout: 30000 });
+  const identifierError = await Promise.race([
+    page.waitForURL(/\/u\/login\/password/, { timeout: 15000 }).then(() => null),
+    getVisibleAuthError(page),
+  ]);
+
+  if (identifierError) {
+    throw new Error(identifierError);
+  }
+
   console.log('On login password page');
 
   await page.locator('#password').fill(LOGIN_PASSWORD);
-  await page.getByRole('button', { name: 'Continue' }).click();
+  await clickContinue(page);
 
-  // Wait for redirect back to Plansight after successful authentication.
-  await page.waitForURL(
-    (url) => url.hostname.includes('plansight.com') && !url.hostname.includes('devauth'),
-    { timeout: 60000 },
-  );
+  const passwordError = await Promise.race([
+    page
+      .waitForURL(
+        (url) => url.hostname.includes('plansight.com') && !url.hostname.includes('devauth'),
+        { timeout: 30000 },
+      )
+      .then(() => null),
+    getVisibleAuthError(page),
+  ]);
+
+  if (passwordError) {
+    throw new Error(passwordError);
+  }
 }
 
 async function runLoginAutomation() {
@@ -55,7 +94,7 @@ async function runLoginAutomation() {
     const finalUrl = page.url();
     const title = await page.title();
 
-    console.log(`Login successful`);
+    console.log('Login successful');
     console.log(`Final URL: ${finalUrl}`);
     console.log(`Page title: ${title}`);
 
