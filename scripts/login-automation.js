@@ -121,7 +121,10 @@ async function runLoginAutomation() {
   requireCredentials();
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({
+    headless: process.env.HEADED !== '1',
+    slowMo: process.env.HEADED === '1' ? 400 : 0,
+  });
   const context = await browser.newContext();
   const page = await context.newPage();
 
