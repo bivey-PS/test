@@ -295,6 +295,8 @@ const BENEFITS_PLAN_GROUP_ROWS = [
 async function findVisibleBenefitRow(page, rowName, alternatives = []) {
   const names = [rowName, ...alternatives];
 
+  await page.getByText('Benefits').first().scrollIntoViewIfNeeded();
+
   for (const name of names) {
     const row = page.getByText(name, { exact: true });
 
@@ -320,33 +322,100 @@ async function verifyBenefitsPlanGroupRows(page) {
   await page.getByText('Plan Group').first().waitFor({ timeout: 30000 });
   await page.getByText('Benefits').first().waitFor({ timeout: 30000 });
 
+  const rowResults = [];
   const verifiedRows = [];
   const missingRows = [];
 
   for (const row of BENEFITS_PLAN_GROUP_ROWS) {
     const rowName = typeof row === 'string' ? row : row.name;
     const alternatives = typeof row === 'string' ? [] : row.alternatives || [];
+    const searchedNames = [rowName, ...alternatives];
 
     console.log(`Checking row: ${rowName}`);
     const foundAs = await findVisibleBenefitRow(page, rowName, alternatives);
 
-    if (foundAs) {
+    const found = Boolean(foundAs);
+    rowResults.push({
+      rowName,
+      found,
+      matchedAs: foundAs,
+      searchedNames,
+    });
+
+    if (found) {
       verifiedRows.push(foundAs);
       console.log(`Verified row: ${foundAs}`);
     } else {
       missingRows.push(rowName);
+      console.log(`Missing row: ${rowName}`);
     }
   }
 
-  if (missingRows.length > 0) {
-    throw new Error(
-      `Could not find Benefits Plan Group rows: ${missingRows.join(', ')}`,
+  const report = {
+    verified: missingRows.length === 0,
+    summary: {
+      total: rowResults.length,
+      found: verifiedRows.length,
+      missing: missingRows.length,
+    },
+    rows: rowResults,
+    verifiedRows,
+    missingRows,
+  };
+
+  saveBenefitsVerificationReport(report, page.url());
+
+  return report;
+}
+
+function saveBenefitsVerificationReport(report, pageUrl, baseUrl = process.env.BASE_URL) {
+  const timestamp = new Date().toISOString();
+  const jsonReport = {
+    baseUrl: baseUrl || null,
+    pageUrl,
+    timestamp,
+    summary: report.summary,
+    verified: report.verified,
+    rows: report.rows,
+  };
+
+  const jsonPath = path.join(OUTPUT_DIR, 'benefits-verification-report.json');
+  fs.writeFileSync(jsonPath, JSON.stringify(jsonReport, null, 2));
+  console.log(`Saved benefits verification report: ${jsonPath}`);
+
+  const markdownLines = [
+    '# Benefits Plan Group Verification Report',
+    '',
+    `- **Base URL:** ${baseUrl || 'n/a'}`,
+    `- **Page URL:** ${pageUrl}`,
+    `- **Timestamp:** ${timestamp}`,
+    `- **Result:** ${report.verified ? 'PASS' : 'FAIL'}`,
+    `- **Summary:** ${report.summary.found}/${report.summary.total} rows found`,
+    '',
+    '| Row | Status | Matched As | Searched Names |',
+    '| --- | --- | --- | --- |',
+  ];
+
+  for (const row of report.rows) {
+    markdownLines.push(
+      `| ${row.rowName} | ${row.found ? 'FOUND' : 'NOT FOUND'} | ${row.matchedAs || '-'} | ${row.searchedNames.join(', ')} |`,
     );
   }
 
+  if (report.missingRows.length > 0) {
+    markdownLines.push('', '## Missing Rows', '');
+    for (const rowName of report.missingRows) {
+      markdownLines.push(`- ${rowName}`);
+    }
+  }
+
+  const markdownPath = path.join(OUTPUT_DIR, 'benefits-verification-report.md');
+  fs.writeFileSync(markdownPath, `${markdownLines.join('\n')}\n`);
+  console.log(`Saved benefits verification report: ${markdownPath}`);
+
   return {
-    verified: true,
-    verifiedRows,
+    jsonPath,
+    markdownPath,
   };
 }
 
@@ -389,5 +458,6 @@ module.exports = {
   openCancerTab,
   verifyBenefitsPlanGroupRows,
   verifyReconstructiveSurgeryBenefit,
+  saveBenefitsVerificationReport,
   saveRecording,
 };

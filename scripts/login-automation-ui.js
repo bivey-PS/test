@@ -98,6 +98,12 @@ async function runLoginUiDemo() {
       console.log(`Cancer tab: ${cancer.cancerQuotesUrl}`);
       console.log(`Reconstructive Surgery verified: ${benefit.verified}`);
       console.log(`Verified benefit rows: ${benefit.verifiedRows.join(', ')}`);
+      console.log(
+        `Benefits report: ${benefit.summary.found}/${benefit.summary.total} rows found`,
+      );
+      if (!benefit.verified) {
+        console.log(`Missing benefit rows: ${benefit.missingRows.join(', ')}`);
+      }
 
       await page.close();
       const recordingPath = await saveRecording(page, 'login-ui-demo');

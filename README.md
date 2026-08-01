@@ -73,6 +73,9 @@ After login, the automation also:
   - Transportation
   - Ambulance
   - Loging (also accepts Lodging)
+- Writes a benefits verification report with per-row FOUND / NOT FOUND status:
+  - `automation-output/benefits-verification-report.json`
+  - `automation-output/benefits-verification-report.md`
 - Verifies the **All Employers**, **Ace Testing**, and **Shadybrook Lumber** pages load
 - Saves a dashboard screenshot
 

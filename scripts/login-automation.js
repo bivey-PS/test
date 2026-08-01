@@ -73,6 +73,12 @@ async function runLoginAutomation() {
     const cancer = await openCancerTab(page);
     const benefit = await verifyReconstructiveSurgeryBenefit(page);
 
+    if (!benefit.verified) {
+      throw new Error(
+        `Benefits verification failed. Missing rows: ${benefit.missingRows.join(', ')}`,
+      );
+    }
+
     await page.screenshot({
       path: path.join(OUTPUT_DIR, 'login-success.png'),
       fullPage: true,
@@ -93,8 +99,13 @@ async function runLoginAutomation() {
       shadybrookRfpUrl: shadybrookRfp.rfpUrl,
       quotesUrl: quotes.quotesUrl,
       cancerQuotesUrl: cancer.cancerQuotesUrl,
-      reconstructiveSurgeryVerified: benefit.verified,
-      verifiedBenefitRows: benefit.verifiedRows,
+      benefitsVerification: {
+        verified: benefit.verified,
+        summary: benefit.summary,
+        rows: benefit.rows,
+        reportJson: path.join(OUTPUT_DIR, 'benefits-verification-report.json'),
+        reportMarkdown: path.join(OUTPUT_DIR, 'benefits-verification-report.md'),
+      },
       timestamp: new Date().toISOString(),
       success: true,
     };
@@ -131,6 +142,10 @@ async function runLoginAutomation() {
           timestamp: new Date().toISOString(),
           success: false,
           error: error.message,
+          benefitsVerificationReport: path.join(
+            OUTPUT_DIR,
+            'benefits-verification-report.json',
+          ),
         },
         null,
         2,
