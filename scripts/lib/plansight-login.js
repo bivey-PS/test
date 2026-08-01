@@ -160,6 +160,15 @@ async function navigateToEmployers(page) {
   };
 }
 
+async function waitForPageReady(page, timeout = 60000) {
+  const loading = page.getByText('Loading...');
+  if ((await loading.count()) > 0) {
+    await loading.first().waitFor({ state: 'hidden', timeout }).catch(() => {});
+  }
+
+  await page.waitForLoadState('networkidle', { timeout }).catch(() => {});
+}
+
 async function openAceTestingEmployer(page) {
   console.log('Waiting for employers table to populate');
 
@@ -175,7 +184,8 @@ async function openAceTestingEmployer(page) {
   await employerLink.evaluate((element) => element.click());
 
   await page.waitForURL(/\/group\/.*#groupUpdate/, { timeout: 30000 });
-  await page.getByText('About This Employer').waitFor({ timeout: 15000 });
+  await waitForPageReady(page);
+  await page.getByText('About This Employer').waitFor({ timeout: 60000 });
 
   const screenshotPath = path.join(OUTPUT_DIR, 'ace-testing-employer.png');
   await page.screenshot({ path: screenshotPath, fullPage: false });
