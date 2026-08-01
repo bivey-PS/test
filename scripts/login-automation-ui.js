@@ -25,6 +25,27 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function authStateMatchesBaseUrl() {
+  if (!fs.existsSync(AUTH_STATE_PATH)) {
+    return false;
+  }
+
+  try {
+    const authState = JSON.parse(fs.readFileSync(AUTH_STATE_PATH, 'utf8'));
+    const baseHost = new URL(BASE_URL).hostname;
+
+    return authState.origins?.some((origin) => {
+      try {
+        return new URL(origin.origin).hostname === baseHost;
+      } catch {
+        return false;
+      }
+    });
+  } catch {
+    return false;
+  }
+}
+
 async function runLoginUiDemo() {
   if (!LOGIN_USERNAME || !LOGIN_PASSWORD) {
     console.error('Set LOGIN_USERNAME and LOGIN_PASSWORD to run the UI demo.');
@@ -55,7 +76,7 @@ async function runLoginUiDemo() {
         password: LOGIN_PASSWORD,
         mfaCode: MFA_CODE,
       });
-    } else if (fs.existsSync(AUTH_STATE_PATH)) {
+    } else if (authStateMatchesBaseUrl()) {
       console.log('Running login steps through MFA, then restoring saved session for dashboard');
       await page.locator('#username').fill(LOGIN_USERNAME);
       await sleep(PAUSE_MS);
@@ -113,7 +134,19 @@ async function runLoginUiDemo() {
       await browser.close();
       return;
     } else {
-      throw new Error('MFA required. Provide MFA_CODE or a saved auth session.');
+      await page.locator('#username').fill(LOGIN_USERNAME);
+      await sleep(PAUSE_MS);
+      await page.getByRole('button', { name: 'Continue' }).click();
+      await page.waitForURL(/\/u\/login\/password/, { timeout: 15000 });
+      await sleep(PAUSE_MS);
+      await page.locator('#password').fill(LOGIN_PASSWORD);
+      await sleep(PAUSE_MS);
+      await page.getByRole('button', { name: 'Continue' }).click();
+      await page.waitForURL(/mfa-sms-challenge/, { timeout: 15000 });
+      await sleep(PAUSE_MS * 2);
+      throw new Error(
+        'MFA required for this environment. Provide MFA_CODE to complete the UI automation.',
+      );
     }
 
     await sleep(PAUSE_MS);
@@ -132,6 +165,12 @@ async function runLoginUiDemo() {
     console.log(`Cancer tab: ${cancer.cancerQuotesUrl}`);
     console.log(`Reconstructive Surgery verified: ${benefit.verified}`);
     console.log(`Verified benefit rows: ${benefit.verifiedRows.join(', ')}`);
+    console.log(
+      `Benefits report: ${benefit.summary.found}/${benefit.summary.total} rows found`,
+    );
+    if (!benefit.verified) {
+      console.log(`Missing benefit rows: ${benefit.missingRows.join(', ')}`);
+    }
 
     await page.close();
     const recordingPath = await saveRecording(page, 'login-ui-demo');
