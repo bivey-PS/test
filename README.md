@@ -65,7 +65,14 @@ After login, the automation also:
 - Opens **Shadybrook Lumber** from the Request for Proposals section on the employer page
 - Clicks the **Quotes** tab on the Shadybrook Lumber RFP page
 - Clicks the **Cancer** benefit tab within Quotes
-- Verifies **Reconstructive Surgery** appears in the **Benefits** section under the **Plan Group** column
+- Verifies these **Benefits** rows in the **Plan Group** column:
+  - Reconstructive Surgery
+  - Experimental Treatment
+  - ICU Benefit
+  - Anti-Nausea Meds
+  - Transportation
+  - Ambulance
+  - Loging (also accepts Lodging)
 - Verifies the **All Employers**, **Ace Testing**, and **Shadybrook Lumber** pages load
 - Saves a dashboard screenshot
 

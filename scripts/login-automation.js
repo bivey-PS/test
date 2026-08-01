@@ -94,6 +94,7 @@ async function runLoginAutomation() {
       quotesUrl: quotes.quotesUrl,
       cancerQuotesUrl: cancer.cancerQuotesUrl,
       reconstructiveSurgeryVerified: benefit.verified,
+      verifiedBenefitRows: benefit.verifiedRows,
       timestamp: new Date().toISOString(),
       success: true,
     };
