@@ -8,6 +8,7 @@ const {
   navigateToEmployers,
   openAceTestingEmployer,
   openShadybrookLumberRfp,
+  openQuotesTab,
   saveRecording,
 } = require('./lib/plansight-login');
 
@@ -66,6 +67,7 @@ async function runLoginAutomation() {
     const employers = await navigateToEmployers(page);
     const aceTesting = await openAceTestingEmployer(page);
     const shadybrookRfp = await openShadybrookLumberRfp(page);
+    const quotes = await openQuotesTab(page);
 
     await page.screenshot({
       path: path.join(OUTPUT_DIR, 'login-success.png'),
@@ -85,6 +87,7 @@ async function runLoginAutomation() {
       employersUrl: employers.employersUrl,
       aceTestingUrl: aceTesting.employerUrl,
       shadybrookRfpUrl: shadybrookRfp.rfpUrl,
+      quotesUrl: quotes.quotesUrl,
       timestamp: new Date().toISOString(),
       success: true,
     };

@@ -8,6 +8,7 @@ const {
   navigateToEmployers,
   openAceTestingEmployer,
   openShadybrookLumberRfp,
+  openQuotesTab,
   saveRecording,
 } = require('./lib/plansight-login');
 
@@ -84,10 +85,12 @@ async function runLoginUiDemo() {
       const employers = await navigateToEmployers(page);
       const aceTesting = await openAceTestingEmployer(page);
       const shadybrookRfp = await openShadybrookLumberRfp(page);
+      const quotes = await openQuotesTab(page);
       console.log(`Dashboard verified: ${dashboard.welcomeText}`);
       console.log(`Employers page: ${employers.employersUrl}`);
       console.log(`Ace Testing employer: ${aceTesting.employerUrl}`);
       console.log(`Shadybrook Lumber RFP: ${shadybrookRfp.rfpUrl}`);
+      console.log(`Quotes tab: ${quotes.quotesUrl}`);
 
       await page.close();
       const recordingPath = await saveRecording(page, 'login-ui-demo');
@@ -105,10 +108,12 @@ async function runLoginUiDemo() {
     const employers = await navigateToEmployers(page);
     const aceTesting = await openAceTestingEmployer(page);
     const shadybrookRfp = await openShadybrookLumberRfp(page);
+    const quotes = await openQuotesTab(page);
     console.log(`Dashboard verified: ${dashboard.welcomeText}`);
     console.log(`Employers page: ${employers.employersUrl}`);
     console.log(`Ace Testing employer: ${aceTesting.employerUrl}`);
     console.log(`Shadybrook Lumber RFP: ${shadybrookRfp.rfpUrl}`);
+    console.log(`Quotes tab: ${quotes.quotesUrl}`);
 
     await page.close();
     const recordingPath = await saveRecording(page, 'login-ui-demo');

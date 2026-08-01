@@ -63,6 +63,7 @@ After login, the automation also:
 - Clicks **Employers** in the left sidebar (`.sidebar-collapse`)
 - Waits for the employers table to populate, then clicks **Ace Testing** in the Employer column
 - Opens **Shadybrook Lumber** from the Request for Proposals section on the employer page
+- Clicks the **Quotes** tab on the Shadybrook Lumber RFP page
 - Verifies the **All Employers**, **Ace Testing**, and **Shadybrook Lumber** pages load
 - Saves a dashboard screenshot
 
@@ -72,6 +73,7 @@ On success, the script saves:
 - `automation-output/employers.png` — employers list screenshot
 - `automation-output/ace-testing-employer.png` — Ace Testing employer detail screenshot
 - `automation-output/shadybrook-lumber-rfp.png` — Shadybrook Lumber RFP screenshot
+- `automation-output/shadybrook-quotes.png` — Shadybrook Lumber Quotes tab screenshot
 - `automation-output/auth-state.json` — reusable browser session
 - `automation-output/login-report.json` — run summary
 - `automation-output/login-recording.mp4` — when `RECORD_VIDEO=1`

@@ -222,6 +222,30 @@ async function openShadybrookLumberRfp(page) {
   };
 }
 
+async function openQuotesTab(page) {
+  console.log('Clicking Quotes tab');
+
+  await page.getByText('Shadybrook Lumber').first().waitFor({ timeout: 15000 });
+
+  const quotesTab = page
+    .locator('.group-nav-tabs-container')
+    .getByRole('link', { name: 'Quotes', exact: true });
+  await quotesTab.waitFor({ timeout: 15000 });
+  await quotesTab.click();
+
+  await page.waitForURL(/#gridInit\/medical/, { timeout: 30000 });
+  await page.getByRole('columnheader', { name: 'Medical' }).waitFor({ timeout: 15000 });
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'shadybrook-quotes.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved Quotes tab screenshot: ${screenshotPath}`);
+
+  return {
+    quotesUrl: page.url(),
+    screenshotPath,
+  };
+}
+
 async function saveRecording(page, outputName = 'login-recording') {
   const video = page.video();
   if (!video) {
@@ -253,5 +277,6 @@ module.exports = {
   navigateToEmployers,
   openAceTestingEmployer,
   openShadybrookLumberRfp,
+  openQuotesTab,
   saveRecording,
 };
