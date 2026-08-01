@@ -259,6 +259,9 @@ async function openCancerTab(page) {
   await page.waitForURL(/#gridInit\/cancer/, { timeout: 30000 });
   await page.locator('.subnav-tab.cancer.active-tab').waitFor({ timeout: 15000 });
 
+  console.log('Waiting 10 seconds on Cancer page');
+  await page.waitForTimeout(10000);
+
   const screenshotPath = path.join(OUTPUT_DIR, 'shadybrook-cancer-quotes.png');
   await page.screenshot({ path: screenshotPath, fullPage: false });
   console.log(`Saved Cancer tab screenshot: ${screenshotPath}`);
