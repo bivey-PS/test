@@ -1,21 +1,22 @@
 const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
+const {
+  OUTPUT_DIR,
+  login,
+  verifyDashboard,
+  saveRecording,
+} = require('./lib/plansight-login');
 
 const BASE_URL = process.env.BASE_URL || 'https://test.plansight.com';
 const LOGIN_USERNAME = process.env.LOGIN_USERNAME || process.env.LOGIN_EMAIL;
 const LOGIN_PASSWORD = process.env.LOGIN_PASSWORD;
 const MFA_CODE = process.env.MFA_CODE;
-const OUTPUT_DIR = path.join(__dirname, '..', 'automation-output');
 const AUTH_STATE_PATH = path.join(OUTPUT_DIR, 'auth-state.json');
 const PAUSE_MS = 1500;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function isLoggedIn(url) {
-  return url.hostname.includes('plansight.com') && !url.hostname.includes('devauth');
 }
 
 async function runLoginUiDemo() {
@@ -30,71 +31,79 @@ async function runLoginUiDemo() {
     headless: false,
     slowMo: 300,
   });
-  const context = await browser.newContext({ viewport: { width: 1400, height: 900 } });
-  const page = await context.newPage();
+  const context = await browser.newContext({
+    viewport: { width: 1400, height: 900 },
+    recordVideo: { dir: OUTPUT_DIR, size: { width: 1400, height: 900 } },
+  });
+  let page = await context.newPage();
 
   try {
     console.log(`Opening ${BASE_URL}`);
     await page.goto(BASE_URL, { waitUntil: 'networkidle', timeout: 60000 });
     await sleep(PAUSE_MS);
 
-    console.log('Entering email');
-    await page.locator('#username').fill(LOGIN_USERNAME);
-    await sleep(PAUSE_MS);
-    await page.getByRole('button', { name: 'Continue' }).click();
-    await page.waitForURL(/\/u\/login\/password/, { timeout: 15000 });
-    await sleep(PAUSE_MS);
+    if (MFA_CODE) {
+      await login(page, {
+        baseUrl: BASE_URL,
+        username: LOGIN_USERNAME,
+        password: LOGIN_PASSWORD,
+        mfaCode: MFA_CODE,
+      });
+    } else if (fs.existsSync(AUTH_STATE_PATH)) {
+      console.log('Running login steps through MFA, then restoring saved session for dashboard');
+      await page.locator('#username').fill(LOGIN_USERNAME);
+      await sleep(PAUSE_MS);
+      await page.getByRole('button', { name: 'Continue' }).click();
+      await page.waitForURL(/\/u\/login\/password/, { timeout: 15000 });
+      await sleep(PAUSE_MS);
+      await page.locator('#password').fill(LOGIN_PASSWORD);
+      await sleep(PAUSE_MS);
+      await page.getByRole('button', { name: 'Continue' }).click();
+      await page.waitForURL(/mfa-sms-challenge/, { timeout: 15000 });
+      await sleep(PAUSE_MS);
 
-    console.log('Entering password');
-    await page.locator('#password').fill(LOGIN_PASSWORD);
-    await sleep(PAUSE_MS);
-    await page.getByRole('button', { name: 'Continue' }).click();
-    await page.waitForURL(/mfa-sms-challenge|test\.plansight\.com/, { timeout: 15000 });
-    await sleep(PAUSE_MS);
+      await page.close();
+      await context.close();
 
-    if (page.url().includes('/u/mfa-sms-challenge')) {
-      console.log('On MFA page');
+      const restoredContext = await browser.newContext({
+        storageState: AUTH_STATE_PATH,
+        viewport: { width: 1400, height: 900 },
+        recordVideo: { dir: OUTPUT_DIR, size: { width: 1400, height: 900 } },
+      });
+      page = await restoredContext.newPage();
+      await page.goto(`${BASE_URL}/app#dashboard`, {
+        waitUntil: 'networkidle',
+        timeout: 60000,
+      });
+      await sleep(PAUSE_MS * 2);
 
-      if (MFA_CODE) {
-        await page.locator('#code').fill(MFA_CODE);
-        await sleep(PAUSE_MS);
-        await page.getByRole('button', { name: 'Continue' }).click();
-        await page.waitForURL((url) => isLoggedIn(url), { timeout: 30000 });
-      } else if (fs.existsSync(AUTH_STATE_PATH)) {
-        console.log('No MFA_CODE provided — restoring saved session to show dashboard');
-        await context.close();
-        const restoredContext = await browser.newContext({
-          storageState: AUTH_STATE_PATH,
-          viewport: { width: 1400, height: 900 },
-        });
-        const restoredPage = await restoredContext.newPage();
-        await restoredPage.goto(`${BASE_URL}/app#dashboard`, {
-          waitUntil: 'networkidle',
-          timeout: 60000,
-        });
-        await sleep(PAUSE_MS * 2);
-        await restoredPage.screenshot({
-          path: path.join(OUTPUT_DIR, 'ui-demo-dashboard.png'),
-          fullPage: false,
-        });
-        console.log(`Dashboard URL: ${restoredPage.url()}`);
-        await sleep(PAUSE_MS * 2);
-        await restoredContext.close();
-        await browser.close();
-        return;
-      } else {
-        throw new Error('MFA required. Provide MFA_CODE or a saved auth session.');
-      }
+      const dashboard = await verifyDashboard(page, BASE_URL);
+      console.log(`Dashboard verified: ${dashboard.welcomeText}`);
+
+      await page.close();
+      const recordingPath = await saveRecording(page, 'login-ui-demo');
+      console.log(`Saved UI demo recording: ${recordingPath}`);
+
+      await restoredContext.close();
+      await browser.close();
+      return;
+    } else {
+      throw new Error('MFA required. Provide MFA_CODE or a saved auth session.');
     }
 
-    console.log(`Login complete: ${page.url()}`);
-    await sleep(PAUSE_MS * 2);
-    await page.screenshot({
-      path: path.join(OUTPUT_DIR, 'ui-demo-dashboard.png'),
-      fullPage: false,
-    });
-    await sleep(PAUSE_MS * 2);
+    await sleep(PAUSE_MS);
+    const dashboard = await verifyDashboard(page, BASE_URL);
+    console.log(`Dashboard verified: ${dashboard.welcomeText}`);
+
+    await page.close();
+    const recordingPath = await saveRecording(page, 'login-ui-demo');
+    console.log(`Saved UI demo recording: ${recordingPath}`);
+  } catch (error) {
+    await page.close().catch(() => {});
+    await saveRecording(page, 'login-ui-demo-error').catch(() => {});
+    throw error;
   } finally {
+    await context.close().catch(() => {});
     await browser.close().catch(() => {});
   }
 }

@@ -42,26 +42,42 @@ BASE_URL=https://your-site.com npm test
 npm run automate
 
 # Login automation for Plansight
-LOGIN_USERNAME=your@email.com LOGIN_PASSWORD=yourpassword npm run automate:login
+LOGIN_USERNAME=your@email.com LOGIN_PASSWORD=yourpassword MFA_CODE=123456 npm run automate:login
+
+# Login with video recording saved to automation-output/login-recording.mp4
+RECORD_VIDEO=1 LOGIN_USERNAME=... LOGIN_PASSWORD=... MFA_CODE=... npm run automate:login
+
+# Headed UI demo (always saves automation-output/login-ui-demo.mp4)
+npm run automate:login:ui
 ```
 
 Login script defaults to `BASE_URL=https://test.plansight.com`. Override if needed:
 
 ```bash
-BASE_URL=https://test.plansight.com LOGIN_USERNAME=your@email.com LOGIN_PASSWORD=yourpassword npm run automate:login
+BASE_URL=https://test.plansight.com LOGIN_USERNAME=your@email.com LOGIN_PASSWORD=yourpassword MFA_CODE=123456 npm run automate:login
 ```
+
+After login, the automation also:
+- Verifies the dashboard loads (`Welcome` message, RFP stat tabs, filter bar)
+- Clicks the **Active RFPs** tab
+- Saves a dashboard screenshot
 
 On success, the script saves:
 - `automation-output/login-success.png` — post-login screenshot
+- `automation-output/dashboard.png` — dashboard screenshot
 - `automation-output/auth-state.json` — reusable browser session
 - `automation-output/login-report.json` — run summary
+- `automation-output/login-recording.mp4` — when `RECORD_VIDEO=1`
+- `automation-output/login-ui-demo.mp4` — from `npm run automate:login:ui`
 
 ## Project Structure
 
 ```
 scripts/
+  lib/plansight-login.js # Shared login + dashboard verification helpers
   website-automation.js  # General automation script
   login-automation.js    # Plansight Auth0 login script
+  login-automation-ui.js # Headed UI demo with MP4 recording
 tests/
   homepage.spec.ts       # Tests against playwright.dev
   example-site.spec.ts   # Tests against example.com
