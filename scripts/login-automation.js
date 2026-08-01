@@ -6,6 +6,7 @@ const {
   login,
   verifyDashboard,
   navigateToEmployers,
+  openAceTestingEmployer,
   saveRecording,
 } = require('./lib/plansight-login');
 
@@ -62,6 +63,7 @@ async function runLoginAutomation() {
 
     const dashboard = await verifyDashboard(page, BASE_URL);
     const employers = await navigateToEmployers(page);
+    const aceTesting = await openAceTestingEmployer(page);
 
     await page.screenshot({
       path: path.join(OUTPUT_DIR, 'login-success.png'),
@@ -79,6 +81,7 @@ async function runLoginAutomation() {
       welcomeText: dashboard.welcomeText,
       dashboardUrl: dashboard.dashboardUrl,
       employersUrl: employers.employersUrl,
+      aceTestingUrl: aceTesting.employerUrl,
       timestamp: new Date().toISOString(),
       success: true,
     };

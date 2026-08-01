@@ -60,11 +60,16 @@ BASE_URL=https://test.plansight.com LOGIN_USERNAME=your@email.com LOGIN_PASSWORD
 After login, the automation also:
 - Verifies the dashboard loads (`Welcome` message, RFP stat tabs, filter bar)
 - Clicks the **Active RFPs** tab
+- Clicks **Employers** in the left sidebar (`.sidebar-collapse`)
+- Waits for the employers table to populate, then clicks **Ace Testing** in the Employer column
+- Verifies the **All Employers** and **Ace Testing** employer pages load
 - Saves a dashboard screenshot
 
 On success, the script saves:
 - `automation-output/login-success.png` — post-login screenshot
 - `automation-output/dashboard.png` — dashboard screenshot
+- `automation-output/employers.png` — employers list screenshot
+- `automation-output/ace-testing-employer.png` — Ace Testing employer detail screenshot
 - `automation-output/auth-state.json` — reusable browser session
 - `automation-output/login-report.json` — run summary
 - `automation-output/login-recording.mp4` — when `RECORD_VIDEO=1`

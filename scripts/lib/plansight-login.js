@@ -147,6 +147,8 @@ async function navigateToEmployers(page) {
 
   await page.waitForURL(/#groupList/, { timeout: 30000 });
   await page.getByText('All Employers').waitFor({ timeout: 15000 });
+  await page.getByRole('columnheader', { name: 'Employer' }).waitFor({ timeout: 30000 });
+  await page.locator('table tbody tr').first().waitFor({ timeout: 30000 });
 
   const screenshotPath = path.join(OUTPUT_DIR, 'employers.png');
   await page.screenshot({ path: screenshotPath, fullPage: false });
@@ -154,6 +156,34 @@ async function navigateToEmployers(page) {
 
   return {
     employersUrl: page.url(),
+    screenshotPath,
+  };
+}
+
+async function openAceTestingEmployer(page) {
+  console.log('Waiting for employers table to populate');
+
+  await page.getByRole('link', { name: 'Ace Testing', exact: true }).waitFor({
+    timeout: 30000,
+  });
+
+  const employerLink = page.locator('table').getByRole('link', {
+    name: 'Ace Testing',
+    exact: true,
+  });
+  await employerLink.scrollIntoViewIfNeeded();
+  await employerLink.evaluate((element) => element.click());
+
+  await page.waitForURL(/\/group\/.*#groupUpdate/, { timeout: 30000 });
+  await page.getByText('About This Employer').waitFor({ timeout: 15000 });
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ace-testing-employer.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved Ace Testing employer screenshot: ${screenshotPath}`);
+
+  return {
+    employerUrl: page.url(),
+    employerName: 'Ace Testing',
     screenshotPath,
   };
 }
@@ -187,5 +217,6 @@ module.exports = {
   login,
   verifyDashboard,
   navigateToEmployers,
+  openAceTestingEmployer,
   saveRecording,
 };
