@@ -282,40 +282,76 @@ async function openCancerTab(page) {
   };
 }
 
-async function verifyReconstructiveSurgeryBenefit(page) {
-  console.log('Verifying Reconstructive Surgery in Benefits Plan Group column');
+const BENEFITS_PLAN_GROUP_ROWS = [
+  'Reconstructive Surgery',
+  'Experimental Treatment',
+  'ICU Benefit',
+  'Anti-Nausea Meds',
+  'Transportation',
+  'Ambulance',
+  { name: 'Loging', alternatives: ['Lodging'] },
+];
+
+async function findVisibleBenefitRow(page, rowName, alternatives = []) {
+  const names = [rowName, ...alternatives];
+
+  for (const name of names) {
+    const row = page.getByText(name, { exact: true });
+
+    for (let attempt = 0; attempt < 40; attempt++) {
+      if ((await row.count()) > 0) {
+        await row.first().scrollIntoViewIfNeeded();
+        if (await row.first().isVisible()) {
+          return name;
+        }
+      }
+
+      await page.mouse.wheel(0, 400);
+      await page.waitForTimeout(300);
+    }
+  }
+
+  return null;
+}
+
+async function verifyBenefitsPlanGroupRows(page) {
+  console.log('Verifying Benefits Plan Group rows');
 
   await page.getByText('Plan Group').first().waitFor({ timeout: 30000 });
   await page.getByText('Benefits').first().waitFor({ timeout: 30000 });
 
-  const reconstructiveSurgery = page.getByText('Reconstructive Surgery', { exact: true });
-  let found = false;
+  const verifiedRows = [];
+  const missingRows = [];
 
-  for (let attempt = 0; attempt < 30; attempt++) {
-    if ((await reconstructiveSurgery.count()) > 0) {
-      await reconstructiveSurgery.first().scrollIntoViewIfNeeded();
-      if (await reconstructiveSurgery.first().isVisible()) {
-        found = true;
-        break;
-      }
+  for (const row of BENEFITS_PLAN_GROUP_ROWS) {
+    const rowName = typeof row === 'string' ? row : row.name;
+    const alternatives = typeof row === 'string' ? [] : row.alternatives || [];
+
+    console.log(`Checking row: ${rowName}`);
+    const foundAs = await findVisibleBenefitRow(page, rowName, alternatives);
+
+    if (foundAs) {
+      verifiedRows.push(foundAs);
+      console.log(`Verified row: ${foundAs}`);
+    } else {
+      missingRows.push(rowName);
     }
-
-    await page.mouse.wheel(0, 400);
-    await page.waitForTimeout(300);
   }
 
-  if (!found) {
+  if (missingRows.length > 0) {
     throw new Error(
-      'Could not find "Reconstructive Surgery" row in the Benefits Plan Group column',
+      `Could not find Benefits Plan Group rows: ${missingRows.join(', ')}`,
     );
   }
 
-  console.log('Verified Reconstructive Surgery row in Benefits section');
-
   return {
     verified: true,
-    planGroupRow: 'Reconstructive Surgery',
+    verifiedRows,
   };
+}
+
+async function verifyReconstructiveSurgeryBenefit(page) {
+  return verifyBenefitsPlanGroupRows(page);
 }
 
 async function saveRecording(page, outputName = 'login-recording') {
@@ -351,6 +387,7 @@ module.exports = {
   openShadybrookLumberRfp,
   openQuotesTab,
   openCancerTab,
+  verifyBenefitsPlanGroupRows,
   verifyReconstructiveSurgeryBenefit,
   saveRecording,
 };

@@ -97,6 +97,7 @@ async function runLoginUiDemo() {
       console.log(`Quotes tab: ${quotes.quotesUrl}`);
       console.log(`Cancer tab: ${cancer.cancerQuotesUrl}`);
       console.log(`Reconstructive Surgery verified: ${benefit.verified}`);
+      console.log(`Verified benefit rows: ${benefit.verifiedRows.join(', ')}`);
 
       await page.close();
       const recordingPath = await saveRecording(page, 'login-ui-demo');
