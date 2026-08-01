@@ -49,6 +49,13 @@ async function completeMfa(page, mfaCode) {
   }
 
   await page.locator('#code').fill(mfaCode);
+
+  const rememberDevice = page.locator('#rememberBrowser');
+  if (await rememberDevice.isVisible()) {
+    await rememberDevice.check();
+    console.log('Checked "Remember this device for 30 days"');
+  }
+
   await clickContinue(page);
 
   const mfaError = await Promise.race([
