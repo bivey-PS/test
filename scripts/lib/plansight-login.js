@@ -234,7 +234,7 @@ async function openQuotesTab(page) {
   await quotesTab.click();
 
   await page.waitForURL(/#gridInit\/medical/, { timeout: 30000 });
-  await page.getByRole('columnheader', { name: 'Medical' }).waitFor({ timeout: 15000 });
+  await page.locator('a[href*="#gridInit/medical"]').first().waitFor({ timeout: 30000 });
 
   const screenshotPath = path.join(OUTPUT_DIR, 'shadybrook-quotes.png');
   await page.screenshot({ path: screenshotPath, fullPage: false });
@@ -242,6 +242,29 @@ async function openQuotesTab(page) {
 
   return {
     quotesUrl: page.url(),
+    screenshotPath,
+  };
+}
+
+async function openCancerTab(page) {
+  console.log('Clicking Cancer tab');
+
+  const medicalTab = page.locator('a[href*="#gridInit/medical"]');
+  await medicalTab.first().waitFor({ timeout: 30000 });
+
+  const cancerTab = page.locator('a[href*="#gridInit/cancer"]');
+  await cancerTab.first().waitFor({ state: 'visible', timeout: 30000 });
+  await cancerTab.first().click();
+
+  await page.waitForURL(/#gridInit\/cancer/, { timeout: 30000 });
+  await page.locator('.subnav-tab.cancer.active-tab').waitFor({ timeout: 15000 });
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'shadybrook-cancer-quotes.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved Cancer tab screenshot: ${screenshotPath}`);
+
+  return {
+    cancerQuotesUrl: page.url(),
     screenshotPath,
   };
 }
@@ -278,5 +301,6 @@ module.exports = {
   openAceTestingEmployer,
   openShadybrookLumberRfp,
   openQuotesTab,
+  openCancerTab,
   saveRecording,
 };
