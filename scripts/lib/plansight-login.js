@@ -129,6 +129,28 @@ async function verifyDashboard(page, baseUrl) {
   };
 }
 
+async function navigateToEmployers(page) {
+  console.log('Clicking Employers in sidebar');
+
+  const sidebar = page.locator('.sidebar-collapse');
+  await sidebar.waitFor({ timeout: 15000 });
+
+  const employersLink = sidebar.locator('li.employers a');
+  await employersLink.click();
+
+  await page.waitForURL(/#groupList/, { timeout: 30000 });
+  await page.getByText('All Employers').waitFor({ timeout: 15000 });
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'employers.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved employers screenshot: ${screenshotPath}`);
+
+  return {
+    employersUrl: page.url(),
+    screenshotPath,
+  };
+}
+
 async function saveRecording(page, outputName = 'login-recording') {
   const video = page.video();
   if (!video) {
@@ -157,5 +179,6 @@ module.exports = {
   isLoggedIn,
   login,
   verifyDashboard,
+  navigateToEmployers,
   saveRecording,
 };

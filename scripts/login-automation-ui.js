@@ -5,6 +5,7 @@ const {
   OUTPUT_DIR,
   login,
   verifyDashboard,
+  navigateToEmployers,
   saveRecording,
 } = require('./lib/plansight-login');
 
@@ -78,7 +79,9 @@ async function runLoginUiDemo() {
       await sleep(PAUSE_MS * 2);
 
       const dashboard = await verifyDashboard(page, BASE_URL);
+      const employers = await navigateToEmployers(page);
       console.log(`Dashboard verified: ${dashboard.welcomeText}`);
+      console.log(`Employers page: ${employers.employersUrl}`);
 
       await page.close();
       const recordingPath = await saveRecording(page, 'login-ui-demo');
@@ -93,7 +96,9 @@ async function runLoginUiDemo() {
 
     await sleep(PAUSE_MS);
     const dashboard = await verifyDashboard(page, BASE_URL);
+    const employers = await navigateToEmployers(page);
     console.log(`Dashboard verified: ${dashboard.welcomeText}`);
+    console.log(`Employers page: ${employers.employersUrl}`);
 
     await page.close();
     const recordingPath = await saveRecording(page, 'login-ui-demo');
