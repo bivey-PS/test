@@ -5,6 +5,7 @@ const path = require('path');
 const BASE_URL = process.env.BASE_URL || 'https://test.plansight.com';
 const LOGIN_USERNAME = process.env.LOGIN_USERNAME || process.env.LOGIN_EMAIL;
 const LOGIN_PASSWORD = process.env.LOGIN_PASSWORD;
+const MFA_CODE = process.env.MFA_CODE;
 const OUTPUT_DIR = path.join(__dirname, '..', 'automation-output');
 const AUTH_STATE_PATH = path.join(OUTPUT_DIR, 'auth-state.json');
 
@@ -12,6 +13,7 @@ function requireCredentials() {
   if (!LOGIN_USERNAME || !LOGIN_PASSWORD) {
     console.error('Missing credentials. Set environment variables before running:');
     console.error('  LOGIN_USERNAME=your@email.com LOGIN_PASSWORD=yourpassword npm run automate:login');
+    console.error('  MFA_CODE=123456 (required when SMS verification is enabled)');
     console.error('  BASE_URL=https://test.plansight.com (optional, this is the default)');
     process.exit(1);
   }
@@ -21,6 +23,10 @@ function requireCredentials() {
     console.error(`Received: ${LOGIN_USERNAME}`);
     process.exit(1);
   }
+}
+
+function isLoggedIn(url) {
+  return url.hostname.includes('plansight.com') && !url.hostname.includes('devauth');
 }
 
 async function getVisibleAuthError(page) {
@@ -41,6 +47,49 @@ async function clickContinue(page) {
   await page.getByRole('button', { name: 'Continue' }).click();
 }
 
+async function waitForAuthStep(page, urlPattern, timeout = 15000) {
+  const stepError = await Promise.race([
+    page.waitForURL(urlPattern, { timeout }).then(() => null),
+    getVisibleAuthError(page),
+  ]);
+
+  if (stepError) {
+    throw new Error(stepError);
+  }
+}
+
+async function completeMfa(page) {
+  if (!page.url().includes('/u/mfa-sms-challenge')) {
+    return;
+  }
+
+  console.log('On SMS MFA challenge page');
+
+  if (!MFA_CODE) {
+    throw new Error(
+      'SMS verification required. Provide MFA_CODE=123456 to complete login.',
+    );
+  }
+
+  await page.locator('#code').fill(MFA_CODE);
+  await clickContinue(page);
+
+  const mfaError = await Promise.race([
+    page
+      .waitForURL((url) => isLoggedIn(url), { timeout: 30000 })
+      .then(() => null),
+    getVisibleAuthError(page),
+  ]);
+
+  if (mfaError) {
+    throw new Error(mfaError);
+  }
+
+  if (page.url().includes('/u/mfa-sms-challenge')) {
+    throw new Error('MFA verification did not complete. Check the SMS code and try again.');
+  }
+}
+
 async function login(page) {
   console.log(`Opening ${BASE_URL}`);
   await page.goto(BASE_URL, { waitUntil: 'networkidle', timeout: 60000 });
@@ -50,33 +99,21 @@ async function login(page) {
 
   await page.locator('#username').fill(LOGIN_USERNAME);
   await clickContinue(page);
-
-  const identifierError = await Promise.race([
-    page.waitForURL(/\/u\/login\/password/, { timeout: 15000 }).then(() => null),
-    getVisibleAuthError(page),
-  ]);
-
-  if (identifierError) {
-    throw new Error(identifierError);
-  }
+  await waitForAuthStep(page, /\/u\/login\/password/);
 
   console.log('On login password page');
 
   await page.locator('#password').fill(LOGIN_PASSWORD);
   await clickContinue(page);
 
-  const passwordError = await Promise.race([
-    page
-      .waitForURL(
-        (url) => url.hostname.includes('plansight.com') && !url.hostname.includes('devauth'),
-        { timeout: 30000 },
-      )
-      .then(() => null),
-    getVisibleAuthError(page),
-  ]);
+  if (page.url().includes('/u/login/password')) {
+    await waitForAuthStep(page, /\/u\/(mfa-sms-challenge|login\/)/, 30000);
+  }
 
-  if (passwordError) {
-    throw new Error(passwordError);
+  await completeMfa(page);
+
+  if (!isLoggedIn(new URL(page.url()))) {
+    await page.waitForURL((url) => isLoggedIn(url), { timeout: 30000 });
   }
 }
 
