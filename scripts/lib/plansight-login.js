@@ -188,6 +188,40 @@ async function openAceTestingEmployer(page) {
   };
 }
 
+async function openShadybrookLumberRfp(page) {
+  console.log('Waiting for Request for Proposals section to load');
+
+  const rfpTable = page.locator('#pending-active-pastDue-rfp-table');
+  await rfpTable.waitFor({ timeout: 30000 });
+  await rfpTable.locator('tbody tr').first().waitFor({ timeout: 30000 });
+
+  const rfpHeader = page.getByText('Request for Proposals');
+  if (await rfpHeader.count()) {
+    await rfpHeader.first().waitFor({ timeout: 15000 });
+  }
+
+  const shadybrookLink = rfpTable.locator('a[href*="#marketResponse"]').filter({
+    has: page.locator('.name', { hasText: 'Shadybrook Lumber' }),
+  });
+  await shadybrookLink.first().waitFor({ timeout: 30000 });
+  await shadybrookLink.first().scrollIntoViewIfNeeded();
+  await shadybrookLink.first().evaluate((element) => element.click());
+
+  await page.waitForURL(/#marketResponse/, { timeout: 30000 });
+  await page.getByText('Shadybrook Lumber').first().waitFor({ timeout: 15000 });
+  await page.getByText('Market Response').first().waitFor({ timeout: 15000 });
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'shadybrook-lumber-rfp.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved Shadybrook Lumber RFP screenshot: ${screenshotPath}`);
+
+  return {
+    rfpUrl: page.url(),
+    rfpName: 'Shadybrook Lumber',
+    screenshotPath,
+  };
+}
+
 async function saveRecording(page, outputName = 'login-recording') {
   const video = page.video();
   if (!video) {
@@ -218,5 +252,6 @@ module.exports = {
   verifyDashboard,
   navigateToEmployers,
   openAceTestingEmployer,
+  openShadybrookLumberRfp,
   saveRecording,
 };

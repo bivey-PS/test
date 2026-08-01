@@ -7,6 +7,7 @@ const {
   verifyDashboard,
   navigateToEmployers,
   openAceTestingEmployer,
+  openShadybrookLumberRfp,
   saveRecording,
 } = require('./lib/plansight-login');
 
@@ -82,9 +83,11 @@ async function runLoginUiDemo() {
       const dashboard = await verifyDashboard(page, BASE_URL);
       const employers = await navigateToEmployers(page);
       const aceTesting = await openAceTestingEmployer(page);
+      const shadybrookRfp = await openShadybrookLumberRfp(page);
       console.log(`Dashboard verified: ${dashboard.welcomeText}`);
       console.log(`Employers page: ${employers.employersUrl}`);
       console.log(`Ace Testing employer: ${aceTesting.employerUrl}`);
+      console.log(`Shadybrook Lumber RFP: ${shadybrookRfp.rfpUrl}`);
 
       await page.close();
       const recordingPath = await saveRecording(page, 'login-ui-demo');
@@ -101,9 +104,11 @@ async function runLoginUiDemo() {
     const dashboard = await verifyDashboard(page, BASE_URL);
     const employers = await navigateToEmployers(page);
     const aceTesting = await openAceTestingEmployer(page);
+    const shadybrookRfp = await openShadybrookLumberRfp(page);
     console.log(`Dashboard verified: ${dashboard.welcomeText}`);
     console.log(`Employers page: ${employers.employersUrl}`);
     console.log(`Ace Testing employer: ${aceTesting.employerUrl}`);
+    console.log(`Shadybrook Lumber RFP: ${shadybrookRfp.rfpUrl}`);
 
     await page.close();
     const recordingPath = await saveRecording(page, 'login-ui-demo');
