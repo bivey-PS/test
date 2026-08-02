@@ -263,7 +263,7 @@ async function openCancerTab(page) {
   await medicalTab.first().waitFor({ timeout: 30000 });
 
   const cancerTab = page.locator('a[href*="#gridInit/cancer"]');
-  await cancerTab.first().waitFor({ state: 'visible', timeout: 30000 });
+  await cancerTab.first().waitFor({ state: 'visible', timeout: 90000 });
   await cancerTab.first().click();
 
   await page.waitForURL(/#gridInit\/cancer/, { timeout: 30000 });
