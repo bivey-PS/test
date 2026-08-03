@@ -298,7 +298,7 @@ async function findVisibleBenefitRow(page, rowName, alternatives = []) {
   await page.getByText('Benefits').first().scrollIntoViewIfNeeded();
 
   for (const name of names) {
-    const row = page.getByText(name, { exact: true });
+    const row = page.locator('visible=true').getByText(name, { exact: true });
 
     for (let attempt = 0; attempt < 40; attempt++) {
       if ((await row.count()) > 0) {
@@ -316,11 +316,20 @@ async function findVisibleBenefitRow(page, rowName, alternatives = []) {
   return null;
 }
 
+async function waitForVisibleLabel(page, text, timeout = 60000) {
+  await page
+    .locator('visible=true')
+    .getByText(text, { exact: true })
+    .first()
+    .waitFor({ timeout });
+}
+
 async function verifyBenefitsPlanGroupRows(page) {
   console.log('Verifying Benefits Plan Group rows');
 
-  await page.getByText('Plan Group').first().waitFor({ timeout: 30000 });
-  await page.getByText('Benefits').first().waitFor({ timeout: 30000 });
+  await page.waitForTimeout(2000);
+  await waitForVisibleLabel(page, 'Plan Group');
+  await waitForVisibleLabel(page, 'Benefits');
 
   const rowResults = [];
   const verifiedRows = [];
