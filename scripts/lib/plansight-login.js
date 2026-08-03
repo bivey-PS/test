@@ -13,12 +13,21 @@ function authStateMatchesBaseUrl(baseUrl, authStatePath = AUTH_STATE_PATH) {
     const authState = JSON.parse(fs.readFileSync(authStatePath, 'utf8'));
     const baseHost = new URL(baseUrl).hostname;
 
-    return authState.origins?.some((origin) => {
+    const originMatch = authState.origins?.some((origin) => {
       try {
         return new URL(origin.origin).hostname === baseHost;
       } catch {
         return false;
       }
+    });
+
+    if (originMatch) {
+      return true;
+    }
+
+    return authState.cookies?.some((cookie) => {
+      const domain = cookie.domain?.replace(/^\./, '');
+      return domain === baseHost || baseHost.endsWith(`.${domain}`);
     });
   } catch {
     return false;
@@ -363,106 +372,79 @@ async function openCancerTab(page) {
 }
 
 const BENEFITS_PLAN_GROUP_ROWS = [
-  'Reconstructive Surgery',
-  'Experimental Treatment',
-  'ICU Benefit',
-  'Anti-Nausea Meds',
-  'Transportation',
-  'Ambulance',
-  { name: 'Loging', alternatives: ['Lodging'] },
+  { label: 'Reconstructive Surgery', cssKey: 'reconstructiveSurgery' },
+  { label: 'Experimental Treatment', cssKey: 'experimentalTreatment' },
+  { label: 'ICU Benefit', cssKey: 'icuBenefit' },
+  { label: 'Anti-Nausea Meds', cssKey: 'antiNauseaMeds' },
+  { label: 'Transportation', cssKey: 'transportation' },
+  { label: 'Ambulance', cssKey: 'ambulance' },
+  { label: 'Lodging', cssKey: 'lodging', alternatives: ['Loging'] },
 ];
 
-async function scrollBenefitsSection(page) {
-  const benefitsLabel = page.locator('visible=true').getByText('Benefits', { exact: true }).first();
-  await benefitsLabel.scrollIntoViewIfNeeded();
-
-  const scrollTargets = [
-    page.locator('.group-nav-tabs-container').locator('..'),
-    page.locator('[class*="quote"]').first(),
-    page.locator('[class*="grid"]').first(),
-    page.locator('main').first(),
-  ];
-
-  for (const target of scrollTargets) {
-    if ((await target.count()) === 0) {
-      continue;
-    }
-
-    await target.evaluate((element) => {
-      element.scrollTop = Math.min(element.scrollTop + 400, element.scrollHeight);
-    }).catch(() => {});
-  }
-
-  await page.mouse.wheel(0, 400);
-  await page.keyboard.press('PageDown').catch(() => {});
+async function waitForCancerBenefitsGrid(page, timeout = 60000) {
+  await page.locator('.ibox-title-plansight').filter({ hasText: 'Plan Group' }).first().waitFor({
+    timeout,
+  });
+  await page.locator('.plansight-sub-row-benefits-reconstructiveSurgery').first().waitFor({
+    timeout,
+  });
 }
 
-async function findVisibleBenefitRow(page, rowName, alternatives = []) {
-  const names = [rowName, ...alternatives];
+async function findBenefitRow(page, { label, cssKey, alternatives = [] }) {
+  const selector = `.plansight-sub-row-benefits-${cssKey}`;
+  const row = page.locator(selector).first();
 
-  await page.locator('visible=true').getByText('Benefits', { exact: true }).first().scrollIntoViewIfNeeded();
+  if ((await row.count()) > 0) {
+    await row.scrollIntoViewIfNeeded();
+    const text = (await row.textContent())?.trim();
+    if (text) {
+      return text;
+    }
+  }
 
+  const names = [label, ...alternatives];
   for (const name of names) {
-    const row = page.locator('visible=true').getByText(name, { exact: true });
-
-    for (let attempt = 0; attempt < 60; attempt++) {
-      if ((await row.count()) > 0) {
-        await row.first().scrollIntoViewIfNeeded();
-        if (await row.first().isVisible()) {
-          return name;
-        }
+    const textRow = page.getByText(name, { exact: true }).first();
+    if ((await textRow.count()) > 0) {
+      await textRow.scrollIntoViewIfNeeded();
+      if (await textRow.isVisible()) {
+        return name;
       }
-
-      await scrollBenefitsSection(page);
-      await page.waitForTimeout(250);
     }
   }
 
   return null;
 }
 
-async function waitForVisibleLabel(page, text, timeout = 60000) {
-  const locator =
-    text instanceof RegExp
-      ? page.locator('visible=true').getByText(text).first()
-      : page.locator('visible=true').getByText(text, { exact: true }).first();
-
-  await locator.waitFor({ timeout });
-}
-
 async function verifyBenefitsPlanGroupRows(page) {
   console.log('Verifying Benefits Plan Group rows');
 
   await page.waitForTimeout(2000);
-  await waitForVisibleLabel(page, /Plan Group/);
-  await waitForVisibleLabel(page, 'Benefits');
+  await waitForCancerBenefitsGrid(page);
 
   const rowResults = [];
   const verifiedRows = [];
   const missingRows = [];
 
   for (const row of BENEFITS_PLAN_GROUP_ROWS) {
-    const rowName = typeof row === 'string' ? row : row.name;
-    const alternatives = typeof row === 'string' ? [] : row.alternatives || [];
-    const searchedNames = [rowName, ...alternatives];
-
-    console.log(`Checking row: ${rowName}`);
-    const foundAs = await findVisibleBenefitRow(page, rowName, alternatives);
+    console.log(`Checking row: ${row.label}`);
+    const foundAs = await findBenefitRow(page, row);
 
     const found = Boolean(foundAs);
     rowResults.push({
-      rowName,
+      rowName: row.label,
       found,
       matchedAs: foundAs,
-      searchedNames,
+      searchedNames: [row.label, ...(row.alternatives || [])],
+      cssSelector: `.plansight-sub-row-benefits-${row.cssKey}`,
     });
 
     if (found) {
       verifiedRows.push(foundAs);
       console.log(`Verified row: ${foundAs}`);
     } else {
-      missingRows.push(rowName);
-      console.log(`Missing row: ${rowName}`);
+      missingRows.push(row.label);
+      console.log(`Missing row: ${row.label}`);
     }
   }
 
@@ -486,6 +468,7 @@ async function verifyBenefitsPlanGroupRows(page) {
 function saveBenefitsVerificationReport(report, pageUrl, baseUrl = process.env.BASE_URL) {
   const timestamp = new Date().toISOString();
   const jsonReport = {
+    jiraTicket: process.env.JIRA_TICKET || null,
     baseUrl: baseUrl || null,
     pageUrl,
     timestamp,
@@ -501,6 +484,7 @@ function saveBenefitsVerificationReport(report, pageUrl, baseUrl = process.env.B
   const markdownLines = [
     '# Benefits Plan Group Verification Report',
     '',
+    `- **Jira Ticket:** ${process.env.JIRA_TICKET || 'n/a'}`,
     `- **Base URL:** ${baseUrl || 'n/a'}`,
     `- **Page URL:** ${pageUrl}`,
     `- **Timestamp:** ${timestamp}`,
