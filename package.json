@@ -13,6 +13,7 @@
     "automate:login:ui": "HEADED=1 node scripts/login-automation-ui.js",
     "automate:ps8919": "node scripts/ps-8919-automation-ui.js",
     "automate:ps8919:headed": "HEADED=1 node scripts/ps-8919-automation-ui.js",
+    "automate:ps8919:ui": "HEADED=1 JIRA_TICKET=PS-8919 node scripts/ps-8919-automation-ui.js",
     "automate:ps8919:wizard": "RUN_WIZARD=1 node scripts/ps-8919-automation-ui.js"
   },
   "repository": {

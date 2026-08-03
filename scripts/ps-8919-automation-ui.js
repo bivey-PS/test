@@ -20,11 +20,15 @@ const {
   sessionIsValid,
   navigateToEmployers,
   waitForPageReady,
+  saveRecording,
 } = require('./lib/plansight-login');
 
 const BASE_URL = process.env.BASE_URL || 'https://jeff.plansight.com';
-const RUN_WIZARD = process.env.RUN_WIZARD === '1';
+const JIRA_TICKET = process.env.JIRA_TICKET || 'PS-8919';
+const RUN_WIZARD = process.env.RUN_WIZARD !== '0';
 const RFP_NAME = process.env.RFP_NAME || 'Shadybrook Lumber';
+const PAUSE_MS = Number(process.env.PAUSE_MS || 1500);
+const HEADED = process.env.HEADED === '1';
 
 const ACE_TESTING_GROUP_ID = 'QJTbWHW9aoWhyKuwtGnBd8thjcs';
 const DEFAULT_RFP_IDS = {
@@ -35,6 +39,14 @@ const DEFAULT_RFP_IDS = {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function pauseForRecording(page, label) {
+  console.log(label);
+  await sleep(PAUSE_MS);
+  if (HEADED) {
+    await page.waitForTimeout(500);
+  }
 }
 
 async function openAceTestingEmployer(page) {
@@ -108,38 +120,44 @@ async function verifyQuotesAvailable(page) {
 async function configureToMarketRfpWizard(page) {
   const rfpTable = page.locator('#pending-active-pastDue-rfp-table');
   const draftLink = rfpTable.locator('a[href*="#rfpBuilderBasics"]').first();
+  await pauseForRecording(page, 'Step 1: Opening RFP wizard (draft RFP)');
   await draftLink.click();
   await page.waitForURL(/#rfpBuilderBasics/, { timeout: 30000 });
   await waitForPageReady(page);
+  await pauseForRecording(page, 'On RFP Basics page');
 
-  // Step 2: Benefit Types — Marketing-only Medical + Dental
   await page.getByRole('link', { name: 'Benefit Types', exact: true }).click();
   await page.waitForURL(/#rfpBuilderPlanTypes/, { timeout: 30000 });
+  await pauseForRecording(page, 'Step 2: Benefit Types — selecting Medical + Dental (market only)');
 
   await page.locator('input[name="planTypeMedicalIssued"]').uncheck();
   await page.locator('input[name="planTypeDentalIssued"]').uncheck();
   await page.locator('input[name="planTypeMedical"]').check();
   await page.locator('input[name="planTypeDental"]').check();
+  await pauseForRecording(page, 'Medical and Dental benefit types selected');
 
-  // Step 5: Save benefit types
   await page.getByRole('button', { name: 'Save & Continue' }).click();
-  await sleep(2000);
+  await waitForPageReady(page);
+  await pauseForRecording(page, 'Step 5: Benefit types saved');
 
-  // Step 3: Community Rated — non-ACA current, explore ACA/community rates
   const communityRatedLink = page.getByRole('link', { name: 'Community Rated', exact: true });
   if ((await communityRatedLink.count()) > 0) {
     await communityRatedLink.click();
     await page.waitForURL(/#rfpBuilderCommunityRatedPlans/, { timeout: 30000 });
+    await pauseForRecording(page, 'Step 3: Community Rated — non-ACA current, explore ACA rates');
     await page.locator('.medicalACACurrentPlans-container .option-label', { hasText: 'No' }).click();
     await page.locator('.medicalACAPlans-container .option-label', { hasText: 'Yes' }).click();
+    await pauseForRecording(page, 'ACA exploration options set');
     await page.getByRole('button', { name: 'Save & Continue' }).click();
-    await sleep(2000);
+    await waitForPageReady(page);
   }
 
-  // Step 4: Skip census / documents upload
   await page.getByRole('link', { name: 'RFP Quoting Documents', exact: true }).click();
   await page.waitForURL(/#rfpBuilderDocuments/, { timeout: 30000 });
+  await pauseForRecording(page, 'Step 4: Skipping census upload');
   await page.getByRole('button', { name: 'Save & Continue' }).click();
+  await waitForPageReady(page);
+  await pauseForRecording(page, 'Documents step saved without census');
 }
 
 async function runPs8919Flow() {
@@ -150,44 +168,60 @@ async function runPs8919Flow() {
 
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
-  const browser = await chromium.launch({ headless: process.env.HEADED !== '1' });
+  const browser = await chromium.launch({
+    headless: !HEADED,
+    slowMo: HEADED ? 300 : 0,
+  });
   const context = await browser.newContext({
     viewport: { width: 1400, height: 900 },
     storageState: AUTH_STATE_PATH,
+    recordVideo: HEADED
+      ? { dir: OUTPUT_DIR, size: { width: 1400, height: 900 } }
+      : undefined,
   });
   const page = await context.newPage();
 
   const report = {
-    jiraTickets: ['PS-8882', 'PS-8919'],
+    jiraTicket: JIRA_TICKET,
+    jiraTickets: ['PS-8882', JIRA_TICKET],
     baseUrl: BASE_URL,
     rfpName: RFP_NAME,
+    runWizard: RUN_WIZARD,
     timestamp: new Date().toISOString(),
     steps: {},
   };
 
   try {
+    console.log(`Opening ${BASE_URL} (${JIRA_TICKET})`);
     const valid = await sessionIsValid(page, BASE_URL);
     if (!valid) {
       throw new Error('Saved auth session expired — re-run login automation for jeff');
     }
     report.steps.dashboard = { url: page.url(), pass: true };
+    await pauseForRecording(page, 'Dashboard loaded');
 
     await navigateToEmployers(page);
     report.steps.employers = { url: page.url(), pass: true };
+    await pauseForRecording(page, 'Employers page');
 
     await openAceTestingEmployer(page);
     report.steps.employer = { url: page.url(), pass: true };
+    await pauseForRecording(page, 'Ace Testing employer page');
 
     if (RUN_WIZARD) {
       await configureToMarketRfpWizard(page);
       report.steps.wizard = { url: page.url(), pass: true };
     }
 
+    await pauseForRecording(page, 'Step 6: Opening Market Response');
     await openMarketResponseRfp(page, RFP_NAME);
     report.steps.marketResponse = { url: page.url(), pass: true };
+    await pauseForRecording(page, 'Market Response page');
 
+    await pauseForRecording(page, 'Step 7: Opening Quotes tab');
     await openQuotesTab(page);
     report.steps.quotesTab = { url: page.url(), pass: true };
+    await pauseForRecording(page, 'Quotes tab loaded');
 
     const quotesCheck = await verifyQuotesAvailable(page);
     report.steps.quotesVerification = quotesCheck;
@@ -207,11 +241,25 @@ async function runPs8919Flow() {
     console.log(`URL: ${quotesCheck.url}`);
     console.log(`Report: ${reportPath}`);
 
+    if (HEADED) {
+      await page.close();
+      report.recordingPath = await saveRecording(page, 'ps-8919-ui-demo');
+      console.log(`Saved UI recording: ${report.recordingPath}`);
+      fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
+    }
+
     if (!quotesCheck.pass) {
       process.exit(1);
     }
+  } catch (error) {
+    if (HEADED) {
+      await page.close().catch(() => {});
+      await saveRecording(page, 'ps-8919-ui-demo-error').catch(() => {});
+    }
+    throw error;
   } finally {
-    await browser.close();
+    await context.close().catch(() => {});
+    await browser.close().catch(() => {});
   }
 }
 
