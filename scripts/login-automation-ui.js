@@ -76,6 +76,8 @@ async function runLoginUiDemo() {
         password: LOGIN_PASSWORD,
         mfaCode: MFA_CODE,
       });
+      await context.storageState({ path: AUTH_STATE_PATH });
+      console.log(`Saved auth session: ${AUTH_STATE_PATH}`);
     } else if (authStateMatchesBaseUrl()) {
       console.log('Running login steps through MFA, then restoring saved session for dashboard');
       await page.locator('#username').fill(LOGIN_USERNAME);

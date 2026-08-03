@@ -292,15 +292,40 @@ const BENEFITS_PLAN_GROUP_ROWS = [
   { name: 'Loging', alternatives: ['Lodging'] },
 ];
 
+async function scrollBenefitsSection(page) {
+  const benefitsLabel = page.locator('visible=true').getByText('Benefits', { exact: true }).first();
+  await benefitsLabel.scrollIntoViewIfNeeded();
+
+  const scrollTargets = [
+    page.locator('.group-nav-tabs-container').locator('..'),
+    page.locator('[class*="quote"]').first(),
+    page.locator('[class*="grid"]').first(),
+    page.locator('main').first(),
+  ];
+
+  for (const target of scrollTargets) {
+    if ((await target.count()) === 0) {
+      continue;
+    }
+
+    await target.evaluate((element) => {
+      element.scrollTop = Math.min(element.scrollTop + 400, element.scrollHeight);
+    }).catch(() => {});
+  }
+
+  await page.mouse.wheel(0, 400);
+  await page.keyboard.press('PageDown').catch(() => {});
+}
+
 async function findVisibleBenefitRow(page, rowName, alternatives = []) {
   const names = [rowName, ...alternatives];
 
-  await page.getByText('Benefits').first().scrollIntoViewIfNeeded();
+  await page.locator('visible=true').getByText('Benefits', { exact: true }).first().scrollIntoViewIfNeeded();
 
   for (const name of names) {
     const row = page.locator('visible=true').getByText(name, { exact: true });
 
-    for (let attempt = 0; attempt < 40; attempt++) {
+    for (let attempt = 0; attempt < 60; attempt++) {
       if ((await row.count()) > 0) {
         await row.first().scrollIntoViewIfNeeded();
         if (await row.first().isVisible()) {
@@ -308,8 +333,8 @@ async function findVisibleBenefitRow(page, rowName, alternatives = []) {
         }
       }
 
-      await page.mouse.wheel(0, 400);
-      await page.waitForTimeout(300);
+      await scrollBenefitsSection(page);
+      await page.waitForTimeout(250);
     }
   }
 
@@ -317,18 +342,19 @@ async function findVisibleBenefitRow(page, rowName, alternatives = []) {
 }
 
 async function waitForVisibleLabel(page, text, timeout = 60000) {
-  await page
-    .locator('visible=true')
-    .getByText(text, { exact: true })
-    .first()
-    .waitFor({ timeout });
+  const locator =
+    text instanceof RegExp
+      ? page.locator('visible=true').getByText(text).first()
+      : page.locator('visible=true').getByText(text, { exact: true }).first();
+
+  await locator.waitFor({ timeout });
 }
 
 async function verifyBenefitsPlanGroupRows(page) {
   console.log('Verifying Benefits Plan Group rows');
 
   await page.waitForTimeout(2000);
-  await waitForVisibleLabel(page, 'Plan Group');
+  await waitForVisibleLabel(page, /Plan Group/);
   await waitForVisibleLabel(page, 'Benefits');
 
   const rowResults = [];
