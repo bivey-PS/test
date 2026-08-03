@@ -3,7 +3,10 @@ const fs = require('fs');
 const path = require('path');
 const {
   OUTPUT_DIR,
-  login,
+  AUTH_STATE_PATH,
+  authStateMatchesBaseUrl,
+  ensureLoggedIn,
+  saveAuthState,
   verifyDashboard,
   navigateToEmployers,
   openAceTestingEmployer,
@@ -18,14 +21,13 @@ const BASE_URL = process.env.BASE_URL || 'https://test.plansight.com';
 const LOGIN_USERNAME = process.env.LOGIN_USERNAME || process.env.LOGIN_EMAIL;
 const LOGIN_PASSWORD = process.env.LOGIN_PASSWORD;
 const MFA_CODE = process.env.MFA_CODE;
-const AUTH_STATE_PATH = path.join(OUTPUT_DIR, 'auth-state.json');
 const RECORD_VIDEO = process.env.RECORD_VIDEO === '1';
 
 function requireCredentials() {
   if (!LOGIN_USERNAME || !LOGIN_PASSWORD) {
     console.error('Missing credentials. Set environment variables before running:');
     console.error('  LOGIN_USERNAME=your@email.com LOGIN_PASSWORD=yourpassword npm run automate:login');
-    console.error('  MFA_CODE=123456 (required when SMS verification is enabled)');
+    console.error('  MFA_CODE=123456 (required on first login or when saved session expires)');
     console.error('  RECORD_VIDEO=1 (optional, saves automation-output/login-recording.mp4)');
     console.error('  BASE_URL=https://test.plansight.com (optional, this is the default)');
     process.exit(1);
@@ -46,22 +48,37 @@ async function runLoginAutomation() {
     headless: process.env.HEADED !== '1',
     slowMo: process.env.HEADED === '1' ? 400 : 0,
   });
-  const context = await browser.newContext({
+
+  const contextOptions = {
     viewport: { width: 1400, height: 900 },
     recordVideo: RECORD_VIDEO
       ? { dir: OUTPUT_DIR, size: { width: 1400, height: 900 } }
       : undefined,
-  });
+  };
+
+  if (authStateMatchesBaseUrl(BASE_URL)) {
+    contextOptions.storageState = AUTH_STATE_PATH;
+    console.log(`Loading saved auth session for ${new URL(BASE_URL).hostname}`);
+  }
+
+  const context = await browser.newContext(contextOptions);
   const page = await context.newPage();
 
   try {
     console.log(`Opening ${BASE_URL}`);
-    await login(page, {
+    const loginResult = await ensureLoggedIn(page, context, {
       baseUrl: BASE_URL,
       username: LOGIN_USERNAME,
       password: LOGIN_PASSWORD,
       mfaCode: MFA_CODE,
+      authStatePath: AUTH_STATE_PATH,
     });
+
+    console.log(
+      loginResult.reusedSession
+        ? 'Session reused — skipped login and MFA'
+        : 'Fresh login completed — auth session saved for future runs',
+    );
 
     console.log('Login successful');
 
@@ -84,14 +101,14 @@ async function runLoginAutomation() {
       fullPage: true,
     });
 
-    await context.storageState({ path: AUTH_STATE_PATH });
-    console.log(`Saved auth session: ${AUTH_STATE_PATH}`);
+    await saveAuthState(context, AUTH_STATE_PATH);
 
     const report = {
       baseUrl: BASE_URL,
       finalUrl: page.url(),
       title: await page.title(),
       username: LOGIN_USERNAME,
+      reusedSession: loginResult.reusedSession,
       welcomeText: dashboard.welcomeText,
       dashboardUrl: dashboard.dashboardUrl,
       employersUrl: employers.employersUrl,

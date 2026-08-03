@@ -2,6 +2,34 @@ const fs = require('fs');
 const path = require('path');
 
 const OUTPUT_DIR = path.join(__dirname, '..', '..', 'automation-output');
+const AUTH_STATE_PATH = path.join(OUTPUT_DIR, 'auth-state.json');
+
+function authStateMatchesBaseUrl(baseUrl, authStatePath = AUTH_STATE_PATH) {
+  if (!fs.existsSync(authStatePath)) {
+    return false;
+  }
+
+  try {
+    const authState = JSON.parse(fs.readFileSync(authStatePath, 'utf8'));
+    const baseHost = new URL(baseUrl).hostname;
+
+    return authState.origins?.some((origin) => {
+      try {
+        return new URL(origin.origin).hostname === baseHost;
+      } catch {
+        return false;
+      }
+    });
+  } catch {
+    return false;
+  }
+}
+
+async function saveAuthState(context, authStatePath = AUTH_STATE_PATH) {
+  fs.mkdirSync(path.dirname(authStatePath), { recursive: true });
+  await context.storageState({ path: authStatePath });
+  console.log(`Saved auth session: ${authStatePath}`);
+}
 
 function isLoggedIn(url) {
   const hostname = typeof url === 'string' ? new URL(url).hostname : url.hostname;
@@ -37,6 +65,30 @@ async function waitForAuthStep(page, urlPattern, timeout = 15000) {
   }
 }
 
+async function ensureRememberDeviceChecked(page) {
+  const rememberDevice = page.locator('#rememberBrowser');
+  await rememberDevice.waitFor({ state: 'visible', timeout: 15000 });
+
+  if (!(await rememberDevice.isChecked())) {
+    await rememberDevice.check({ force: true });
+  }
+
+  if (!(await rememberDevice.isChecked())) {
+    const label = page.locator('label[for="rememberBrowser"]');
+    if (await label.isVisible()) {
+      await label.click({ force: true });
+    }
+  }
+
+  if (!(await rememberDevice.isChecked())) {
+    throw new Error(
+      '"Remember this device for 30 days" checkbox is not checked — cannot skip MFA on future runs.',
+    );
+  }
+
+  console.log('Verified "Remember this device for 30 days" is checked');
+}
+
 async function completeMfa(page, mfaCode) {
   if (!page.url().includes('/u/mfa-sms-challenge')) {
     return;
@@ -49,12 +101,7 @@ async function completeMfa(page, mfaCode) {
   }
 
   await page.locator('#code').fill(mfaCode);
-
-  const rememberDevice = page.locator('#rememberBrowser');
-  if (await rememberDevice.isVisible()) {
-    await rememberDevice.check({ force: true });
-    console.log('Checked "Remember this device for 30 days"');
-  }
+  await ensureRememberDeviceChecked(page);
 
   await clickContinue(page);
 
@@ -72,6 +119,39 @@ async function completeMfa(page, mfaCode) {
   if (page.url().includes('/u/mfa-sms-challenge')) {
     throw new Error('MFA verification did not complete. Check the SMS code and try again.');
   }
+}
+
+async function sessionIsValid(page, baseUrl) {
+  const dashboardUrl = `${baseUrl.replace(/\/$/, '')}/app#dashboard`;
+
+  try {
+    await page.goto(dashboardUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+
+    if (!isLoggedIn(page.url())) {
+      return false;
+    }
+
+    await page.getByText(/Welcome .+/).waitFor({ timeout: 15000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function ensureLoggedIn(page, context, { baseUrl, username, password, mfaCode, authStatePath }) {
+  if (await sessionIsValid(page, baseUrl)) {
+    console.log('Reusing saved session — MFA not required');
+    return { reusedSession: true };
+  }
+
+  console.log('Saved session unavailable or expired — performing login');
+  await login(page, { baseUrl, username, password, mfaCode });
+
+  if (context) {
+    await saveAuthState(context, authStatePath || AUTH_STATE_PATH);
+  }
+
+  return { reusedSession: false };
 }
 
 async function login(page, { baseUrl, username, password, mfaCode }) {
@@ -483,7 +563,13 @@ async function saveRecording(page, outputName = 'login-recording') {
 
 module.exports = {
   OUTPUT_DIR,
+  AUTH_STATE_PATH,
   isLoggedIn,
+  authStateMatchesBaseUrl,
+  saveAuthState,
+  ensureRememberDeviceChecked,
+  sessionIsValid,
+  ensureLoggedIn,
   login,
   verifyDashboard,
   navigateToEmployers,
