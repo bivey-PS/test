@@ -18,6 +18,7 @@ const {
 } = require('./lib/plansight-login');
 
 const BASE_URL = process.env.BASE_URL || 'https://test.plansight.com';
+const JIRA_TICKET = process.env.JIRA_TICKET;
 const LOGIN_USERNAME = process.env.LOGIN_USERNAME || process.env.LOGIN_EMAIL;
 const LOGIN_PASSWORD = process.env.LOGIN_PASSWORD;
 const MFA_CODE = process.env.MFA_CODE;
@@ -65,7 +66,7 @@ async function runLoginAutomation() {
   const page = await context.newPage();
 
   try {
-    console.log(`Opening ${BASE_URL}`);
+    console.log(`Opening ${BASE_URL}${process.env.JIRA_TICKET ? ` (${process.env.JIRA_TICKET})` : ''}`);
     const loginResult = await ensureLoggedIn(page, context, {
       baseUrl: BASE_URL,
       username: LOGIN_USERNAME,
@@ -104,6 +105,7 @@ async function runLoginAutomation() {
     await saveAuthState(context, AUTH_STATE_PATH);
 
     const report = {
+      jiraTicket: JIRA_TICKET || null,
       baseUrl: BASE_URL,
       finalUrl: page.url(),
       title: await page.title(),
@@ -153,6 +155,7 @@ async function runLoginAutomation() {
       path.join(OUTPUT_DIR, 'login-report.json'),
       JSON.stringify(
         {
+          jiraTicket: JIRA_TICKET || null,
           baseUrl: BASE_URL,
           finalUrl: page.url(),
           username: LOGIN_USERNAME,
