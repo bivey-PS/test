@@ -557,6 +557,7 @@ module.exports = {
   login,
   verifyDashboard,
   navigateToEmployers,
+  waitForPageReady,
   openAceTestingEmployer,
   openShadybrookLumberRfp,
   openQuotesTab,
