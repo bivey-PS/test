@@ -4,6 +4,17 @@ const path = require('path');
 const OUTPUT_DIR = path.join(__dirname, '..', '..', 'automation-output');
 const AUTH_STATE_PATH = path.join(OUTPUT_DIR, 'auth-state.json');
 
+function cookieDomainMatchesHost(cookieDomain, baseHost) {
+  if (!cookieDomain || !baseHost) {
+    return false;
+  }
+
+  // Exact host only. Parent-domain matches (e.g. .plansight.com) would allow
+  // reusing a session saved on test.plansight.com against jeff.plansight.com.
+  const domain = cookieDomain.replace(/^\./, '');
+  return domain === baseHost;
+}
+
 function authStateMatchesBaseUrl(baseUrl, authStatePath = AUTH_STATE_PATH) {
   if (!fs.existsSync(authStatePath)) {
     return false;
@@ -25,10 +36,9 @@ function authStateMatchesBaseUrl(baseUrl, authStatePath = AUTH_STATE_PATH) {
       return true;
     }
 
-    return authState.cookies?.some((cookie) => {
-      const domain = cookie.domain?.replace(/^\./, '');
-      return domain === baseHost || baseHost.endsWith(`.${domain}`);
-    });
+    return authState.cookies?.some((cookie) =>
+      cookieDomainMatchesHost(cookie.domain, baseHost),
+    );
   } catch {
     return false;
   }
@@ -64,14 +74,28 @@ async function clickContinue(page) {
 }
 
 async function waitForAuthStep(page, urlPattern, timeout = 15000) {
-  const stepError = await Promise.race([
-    page.waitForURL(urlPattern, { timeout }).then(() => null),
-    getVisibleAuthError(page),
-  ]);
+  const deadline = Date.now() + timeout;
 
+  while (Date.now() < deadline) {
+    const stepError = await getVisibleAuthError(page);
+    if (stepError) {
+      throw new Error(stepError);
+    }
+
+    try {
+      await page.waitForURL(urlPattern, { timeout: 250 });
+      return;
+    } catch {
+      // URL not matched yet; keep polling for visible auth errors.
+    }
+  }
+
+  const stepError = await getVisibleAuthError(page);
   if (stepError) {
     throw new Error(stepError);
   }
+
+  await page.waitForURL(urlPattern, { timeout: 1 });
 }
 
 async function ensureRememberDeviceChecked(page) {
@@ -114,16 +138,7 @@ async function completeMfa(page, mfaCode) {
 
   await clickContinue(page);
 
-  const mfaError = await Promise.race([
-    page
-      .waitForURL((url) => isLoggedIn(url), { timeout: 30000 })
-      .then(() => null),
-    getVisibleAuthError(page),
-  ]);
-
-  if (mfaError) {
-    throw new Error(mfaError);
-  }
+  await waitForAuthStep(page, (url) => isLoggedIn(url), 30000);
 
   if (page.url().includes('/u/mfa-sms-challenge')) {
     throw new Error('MFA verification did not complete. Check the SMS code and try again.');
@@ -549,6 +564,7 @@ module.exports = {
   OUTPUT_DIR,
   AUTH_STATE_PATH,
   isLoggedIn,
+  cookieDomainMatchesHost,
   authStateMatchesBaseUrl,
   saveAuthState,
   ensureRememberDeviceChecked,
