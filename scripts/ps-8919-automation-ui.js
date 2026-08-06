@@ -89,17 +89,16 @@ async function openQuotesTab(page) {
   await page.locator('a[href*="#gridInit/medical"]').first().waitFor({ timeout: 30000 });
 }
 
-async function verifyQuotesAvailable(page) {
-  const bodyText = await page.locator('body').innerText();
-  const url = page.url();
-
+function evaluateQuotesAvailability(bodyText, url) {
   const noQuotesAvailable = /no quotes available/i.test(bodyText);
   const noPlanOptions = /no medical plan options found/i.test(bodyText);
   const hasQuoteSignals =
     /quote received|current plan|renewal plan/i.test(bodyText) ||
     (/carrier/i.test(bodyText) && /\$[\d,]+/.test(bodyText));
 
-  const pass = !noQuotesAvailable && !noPlanOptions && (hasQuoteSignals || /#gridInit\//.test(url));
+  // Require positive quote signals. Matching #gridInit/ alone is not enough —
+  // openQuotesTab already navigates there, so a URL-only check always passed.
+  const pass = !noQuotesAvailable && !noPlanOptions && hasQuoteSignals;
 
   return {
     pass,
@@ -115,6 +114,11 @@ async function verifyQuotesAvailable(page) {
           ? 'Quotes tab loaded but no carrier/quote content detected'
           : null,
   };
+}
+
+async function verifyQuotesAvailable(page) {
+  const bodyText = await page.locator('body').innerText();
+  return evaluateQuotesAvailability(bodyText, page.url());
 }
 
 async function configureToMarketRfpWizard(page) {
@@ -272,6 +276,7 @@ module.exports = {
   openAceTestingEmployer,
   openMarketResponseRfp,
   openQuotesTab,
+  evaluateQuotesAvailability,
   verifyQuotesAvailable,
   configureToMarketRfpWizard,
   ACE_TESTING_GROUP_ID,
