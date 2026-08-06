@@ -22,6 +22,7 @@ const {
   waitForPageReady,
   saveRecording,
 } = require('./lib/plansight-login');
+const { evaluateQuotesAvailability } = require('./lib/quotes-availability');
 
 const BASE_URL = process.env.BASE_URL || 'https://jeff.plansight.com';
 const JIRA_TICKET = process.env.JIRA_TICKET || 'PS-8919';
@@ -87,33 +88,6 @@ async function openQuotesTab(page) {
   await page.waitForURL(/#gridInit\//, { timeout: 30000 });
   await waitForPageReady(page);
   await page.locator('a[href*="#gridInit/medical"]').first().waitFor({ timeout: 30000 });
-}
-
-function evaluateQuotesAvailability(bodyText, url) {
-  const noQuotesAvailable = /no quotes available/i.test(bodyText);
-  const noPlanOptions = /no medical plan options found/i.test(bodyText);
-  const hasQuoteSignals =
-    /quote received|current plan|renewal plan/i.test(bodyText) ||
-    (/carrier/i.test(bodyText) && /\$[\d,]+/.test(bodyText));
-
-  // Require positive quote signals. Matching #gridInit/ alone is not enough —
-  // openQuotesTab already navigates there, so a URL-only check always passed.
-  const pass = !noQuotesAvailable && !noPlanOptions && hasQuoteSignals;
-
-  return {
-    pass,
-    url,
-    noQuotesAvailable,
-    noPlanOptions,
-    hasQuoteSignals,
-    failReason: noQuotesAvailable
-      ? 'Body contains "no quotes available"'
-      : noPlanOptions
-        ? 'No medical plan options / incomplete RFP builder state'
-        : !hasQuoteSignals
-          ? 'Quotes tab loaded but no carrier/quote content detected'
-          : null,
-  };
 }
 
 async function verifyQuotesAvailable(page) {
@@ -267,11 +241,6 @@ async function runPs8919Flow() {
   }
 }
 
-runPs8919Flow().catch((error) => {
-  console.error('PS-8919 automation failed:', error.message);
-  process.exit(1);
-});
-
 module.exports = {
   openAceTestingEmployer,
   openMarketResponseRfp,
@@ -282,3 +251,10 @@ module.exports = {
   ACE_TESTING_GROUP_ID,
   DEFAULT_RFP_IDS,
 };
+
+if (require.main === module) {
+  runPs8919Flow().catch((error) => {
+    console.error('PS-8919 automation failed:', error.message);
+    process.exit(1);
+  });
+}
