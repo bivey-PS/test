@@ -23,10 +23,13 @@ const {
   saveRecording,
 } = require('./lib/plansight-login');
 const { evaluateQuotesAvailability } = require('./lib/quotes-availability');
+const { shouldRunWizard } = require('./lib/run-wizard');
 
 const BASE_URL = process.env.BASE_URL || 'https://jeff.plansight.com';
 const JIRA_TICKET = process.env.JIRA_TICKET || 'PS-8919';
-const RUN_WIZARD = process.env.RUN_WIZARD !== '0';
+// Opt-in only. Defaulting to on (RUN_WIZARD !== '0') permanently mutates the
+// first draft RFP via Save & Continue — use automate:ps8919:wizard instead.
+const RUN_WIZARD = shouldRunWizard(process.env.RUN_WIZARD);
 const RFP_NAME = process.env.RFP_NAME || 'Shadybrook Lumber';
 const PAUSE_MS = Number(process.env.PAUSE_MS || 1500);
 const HEADED = process.env.HEADED === '1';
@@ -138,6 +141,14 @@ async function configureToMarketRfpWizard(page) {
   await pauseForRecording(page, 'Documents step saved without census');
 }
 
+async function returnToEmployerRfpList(page) {
+  const employerUrl = new URL(page.url());
+  employerUrl.hash = 'groupUpdate';
+  await page.goto(employerUrl.toString());
+  await waitForPageReady(page);
+  await page.locator('#pending-active-pastDue-rfp-table').waitFor({ timeout: 30000 });
+}
+
 async function runPs8919Flow() {
   if (!authStateMatchesBaseUrl(BASE_URL)) {
     console.error(`Auth state at ${AUTH_STATE_PATH} does not match ${BASE_URL}`);
@@ -188,6 +199,7 @@ async function runPs8919Flow() {
 
     if (RUN_WIZARD) {
       await configureToMarketRfpWizard(page);
+      await returnToEmployerRfpList(page);
       report.steps.wizard = { url: page.url(), pass: true };
     }
 
@@ -248,6 +260,7 @@ module.exports = {
   evaluateQuotesAvailability,
   verifyQuotesAvailable,
   configureToMarketRfpWizard,
+  returnToEmployerRfpList,
   ACE_TESTING_GROUP_ID,
   DEFAULT_RFP_IDS,
 };

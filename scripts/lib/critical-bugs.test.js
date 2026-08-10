@@ -7,6 +7,7 @@ const {
   authStateMatchesBaseUrl,
 } = require('./plansight-login');
 const { evaluateQuotesAvailability } = require('./quotes-availability');
+const { shouldRunWizard } = require('./run-wizard');
 
 function testCookieDomainExactHostOnly() {
   assert.strictEqual(
@@ -103,7 +104,17 @@ function testQuotesAvailabilityRequiresPositiveSignals() {
   );
   assert.strictEqual(
     emptyGrid.failReason,
-    'Quotes tab loaded but no carrier/quote content detected',
+    'Quotes tab loaded but no quote content detected',
+  );
+
+  const chromeOnly = evaluateQuotesAvailability(
+    'Quotes Carrier Plan Premium $0 Medical Dental',
+    'https://jeff.plansight.com/group/abc/def#gridInit/medical',
+  );
+  assert.strictEqual(
+    chromeOnly.pass,
+    false,
+    'Carrier column + $ amounts must not pass without quote rows',
   );
 
   const explicitEmpty = evaluateQuotesAvailability(
@@ -121,10 +132,19 @@ function testQuotesAvailabilityRequiresPositiveSignals() {
   assert.strictEqual(withQuotes.failReason, null);
 }
 
+function testWizardIsOptInOnly() {
+  assert.strictEqual(shouldRunWizard(undefined), false);
+  assert.strictEqual(shouldRunWizard(''), false);
+  assert.strictEqual(shouldRunWizard('0'), false);
+  assert.strictEqual(shouldRunWizard('false'), false);
+  assert.strictEqual(shouldRunWizard('1'), true);
+}
+
 function run() {
   testCookieDomainExactHostOnly();
   testAuthStateRejectsSiblingEnvParentCookies();
   testQuotesAvailabilityRequiresPositiveSignals();
+  testWizardIsOptInOnly();
   console.log('critical-bugs.test.js: all assertions passed');
 }
 
