@@ -50,9 +50,34 @@ async function saveAuthState(context, authStatePath = AUTH_STATE_PATH) {
   console.log(`Saved auth session: ${authStatePath}`);
 }
 
+function isPlansightAppHost(hostname) {
+  if (!hostname || hostname.includes('devauth')) {
+    return false;
+  }
+
+  // Exact Plansight app hosts only. hostname.includes('plansight.com') wrongly
+  // accepts lookalikes like notplansight.com and plansight.com.evil.com.
+  return hostname === 'plansight.com' || hostname.endsWith('.plansight.com');
+}
+
 function isLoggedIn(url) {
   const hostname = typeof url === 'string' ? new URL(url).hostname : url.hostname;
-  return hostname.includes('plansight.com') && !hostname.includes('devauth');
+  return isPlansightAppHost(hostname);
+}
+
+/**
+ * Destinations allowed after submitting the password form.
+ * Must NOT match /u/login/password — waitForURL resolves immediately when the
+ * current URL already matches, so a /login/ alternation made the post-password
+ * wait a no-op and skipped the MFA branch.
+ */
+function isPostPasswordAuthDestination(url) {
+  const href = typeof url === 'string' ? url : url.href;
+  if (href.includes('/u/login/password')) {
+    return false;
+  }
+
+  return href.includes('/u/mfa-sms-challenge') || isLoggedIn(url);
 }
 
 async function getVisibleAuthError(page) {
@@ -194,7 +219,7 @@ async function login(page, { baseUrl, username, password, mfaCode }) {
   await clickContinue(page);
 
   if (page.url().includes('/u/login/password')) {
-    await waitForAuthStep(page, /\/u\/(mfa-sms-challenge|login\/)/, 30000);
+    await waitForAuthStep(page, isPostPasswordAuthDestination, 30000);
   }
 
   if (page.url().includes('/u/mfa-sms-challenge')) {
@@ -563,7 +588,9 @@ async function saveRecording(page, outputName = 'login-recording') {
 module.exports = {
   OUTPUT_DIR,
   AUTH_STATE_PATH,
+  isPlansightAppHost,
   isLoggedIn,
+  isPostPasswordAuthDestination,
   cookieDomainMatchesHost,
   authStateMatchesBaseUrl,
   saveAuthState,

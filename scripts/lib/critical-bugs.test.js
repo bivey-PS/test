@@ -5,6 +5,9 @@ const path = require('path');
 const {
   cookieDomainMatchesHost,
   authStateMatchesBaseUrl,
+  isLoggedIn,
+  isPlansightAppHost,
+  isPostPasswordAuthDestination,
 } = require('./plansight-login');
 const { evaluateQuotesAvailability } = require('./quotes-availability');
 const { shouldRunWizard } = require('./run-wizard');
@@ -140,11 +143,57 @@ function testWizardIsOptInOnly() {
   assert.strictEqual(shouldRunWizard('1'), true);
 }
 
+function testIsLoggedInRequiresRealPlansightHost() {
+  assert.strictEqual(isLoggedIn('https://jeff.plansight.com/app#dashboard'), true);
+  assert.strictEqual(isLoggedIn('https://test.plansight.com/app#dashboard'), true);
+  assert.strictEqual(isLoggedIn('https://plansight.com/'), true);
+  assert.strictEqual(isLoggedIn('https://devauth.plansight.com/u/login/password'), false);
+  assert.strictEqual(
+    isPlansightAppHost('notplansight.com'),
+    false,
+    'substring hosts must not count as logged in',
+  );
+  assert.strictEqual(isLoggedIn('https://notplansight.com/'), false);
+  assert.strictEqual(isLoggedIn('https://plansight.com.evil.com/'), false);
+  assert.strictEqual(isLoggedIn('https://jeff.plansight.com.evil.com/'), false);
+  assert.strictEqual(isLoggedIn('https://myplansight.com/'), false);
+}
+
+function testPostPasswordWaitDoesNotMatchPasswordPage() {
+  const passwordUrl = 'https://devauth.plansight.com/u/login/password';
+  const legacyPattern = /\/u\/(mfa-sms-challenge|login\/)/;
+
+  assert.strictEqual(
+    legacyPattern.test(passwordUrl),
+    true,
+    'precondition: legacy pattern matched the password URL (the bug)',
+  );
+  assert.strictEqual(
+    isPostPasswordAuthDestination(passwordUrl),
+    false,
+    'still on password page must keep waiting',
+  );
+  assert.strictEqual(
+    isPostPasswordAuthDestination('https://devauth.plansight.com/u/mfa-sms-challenge'),
+    true,
+  );
+  assert.strictEqual(
+    isPostPasswordAuthDestination('https://jeff.plansight.com/app#dashboard'),
+    true,
+  );
+  assert.strictEqual(
+    isPostPasswordAuthDestination('https://devauth.plansight.com/u/login/identifier'),
+    false,
+  );
+}
+
 function run() {
   testCookieDomainExactHostOnly();
   testAuthStateRejectsSiblingEnvParentCookies();
   testQuotesAvailabilityRequiresPositiveSignals();
   testWizardIsOptInOnly();
+  testIsLoggedInRequiresRealPlansightHost();
+  testPostPasswordWaitDoesNotMatchPasswordPage();
   console.log('critical-bugs.test.js: all assertions passed');
 }
 
