@@ -1,0 +1,35 @@
+{
+  "name": "workspace",
+  "version": "1.0.0",
+  "description": "Playwright website test automation",
+  "scripts": {
+    "test": "playwright test",
+    "test:unit": "node scripts/lib/critical-bugs.test.js",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "test:report": "playwright show-report",
+    "test:debug": "playwright test --debug",
+    "automate": "node scripts/website-automation.js",
+    "automate:login": "node scripts/login-automation.js",
+    "automate:login:ui": "HEADED=1 node scripts/login-automation-ui.js",
+    "automate:ps8919": "node scripts/ps-8919-automation-ui.js",
+    "automate:ps8919:headed": "HEADED=1 node scripts/ps-8919-automation-ui.js",
+    "automate:ps8919:ui": "HEADED=1 JIRA_TICKET=PS-8919 node scripts/ps-8919-automation-ui.js",
+    "automate:ps8919:wizard": "RUN_WIZARD=1 node scripts/ps-8919-automation-ui.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bivey-ps/test.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/bivey-ps/test/issues"
+  },
+  "homepage": "https://github.com/bivey-ps/test#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "exceljs": "^4.4.0"
+  }
+}
