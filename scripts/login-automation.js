@@ -16,29 +16,19 @@ const {
   verifyReconstructiveSurgeryBenefit,
   saveRecording,
 } = require('./lib/plansight-login');
+const { getLoginCredentials, requireLoginPassword } = require('./lib/plansight-credentials');
 
 const BASE_URL = process.env.BASE_URL || 'https://test.plansight.com';
 const JIRA_TICKET = process.env.JIRA_TICKET;
-const LOGIN_USERNAME = process.env.LOGIN_USERNAME || process.env.LOGIN_EMAIL;
-const LOGIN_PASSWORD = process.env.LOGIN_PASSWORD;
-const MFA_CODE = process.env.MFA_CODE;
+const { username: LOGIN_USERNAME, password: LOGIN_PASSWORD, mfaCode: MFA_CODE } =
+  getLoginCredentials();
 const RECORD_VIDEO = process.env.RECORD_VIDEO === '1';
 
 function requireCredentials() {
-  if (!LOGIN_USERNAME || !LOGIN_PASSWORD) {
-    console.error('Missing credentials. Set environment variables before running:');
-    console.error('  LOGIN_USERNAME=your@email.com LOGIN_PASSWORD=yourpassword npm run automate:login');
-    console.error('  MFA_CODE=123456 (required on first login or when saved session expires)');
-    console.error('  RECORD_VIDEO=1 (optional, saves automation-output/login-recording.mp4)');
-    console.error('  BASE_URL=https://test.plansight.com (optional, this is the default)');
-    process.exit(1);
-  }
-
-  if (!LOGIN_USERNAME.includes('@')) {
-    console.error('LOGIN_USERNAME must be a full email address (Auth0 rejects usernames without @).');
-    console.error(`Received: ${LOGIN_USERNAME}`);
-    process.exit(1);
-  }
+  requireLoginPassword(
+    { username: LOGIN_USERNAME, password: LOGIN_PASSWORD },
+    'LOGIN_PASSWORD=yourpassword npm run automate:login',
+  );
 }
 
 async function runLoginAutomation() {

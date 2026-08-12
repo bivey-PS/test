@@ -15,11 +15,11 @@ const {
   verifyReconstructiveSurgeryBenefit,
   saveRecording,
 } = require('./lib/plansight-login');
+const { getLoginCredentials, requireLoginPassword } = require('./lib/plansight-credentials');
 
 const BASE_URL = process.env.BASE_URL || 'https://test.plansight.com';
-const LOGIN_USERNAME = process.env.LOGIN_USERNAME || process.env.LOGIN_EMAIL;
-const LOGIN_PASSWORD = process.env.LOGIN_PASSWORD;
-const MFA_CODE = process.env.MFA_CODE;
+const { username: LOGIN_USERNAME, password: LOGIN_PASSWORD, mfaCode: MFA_CODE } =
+  getLoginCredentials();
 const PAUSE_MS = 1500;
 
 function sleep(ms) {
@@ -55,10 +55,10 @@ async function runPostLoginFlow(page) {
 }
 
 async function runLoginUiDemo() {
-  if (!LOGIN_USERNAME || !LOGIN_PASSWORD) {
-    console.error('Set LOGIN_USERNAME and LOGIN_PASSWORD to run the UI demo.');
-    process.exit(1);
-  }
+  requireLoginPassword(
+    { username: LOGIN_USERNAME, password: LOGIN_PASSWORD },
+    'LOGIN_PASSWORD=yourpassword npm run automate:login:ui',
+  );
 
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 

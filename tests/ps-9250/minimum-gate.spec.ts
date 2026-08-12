@@ -1,7 +1,8 @@
 import { test, expect } from '@playwright/test';
 
 const BASE_URL = process.env.BASE_URL || 'https://www.test.plansight.com';
-const LOGIN_USERNAME = process.env.LOGIN_USERNAME || process.env.LOGIN_EMAIL;
+const LOGIN_USERNAME =
+  process.env.LOGIN_USERNAME || process.env.LOGIN_EMAIL || 'b.ivey@plansight.com';
 const LOGIN_PASSWORD = process.env.LOGIN_PASSWORD;
 const MFA_CODE = process.env.MFA_CODE;
 const EMPLOYER_NAME = process.env.EMPLOYER_NAME || 'Ace Testing';

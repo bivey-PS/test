@@ -9,23 +9,16 @@ const {
   authStateMatchesBaseUrl,
   saveAuthState,
 } = require('../lib/plansight-login');
+const { requireLoginPassword } = require('../lib/plansight-credentials');
 
 function requireCredentials() {
-  if (!config.loginUsername || !config.loginPassword) {
-    console.error('Missing credentials. Set environment variables before running:');
-    console.error(
-      '  LOGIN_USERNAME=your@email.com LOGIN_PASSWORD=yourpassword npm run automate:ps9250:minimum-gate',
-    );
-    console.error('  MFA_CODE=123456 (required on first login or when saved session expires)');
-    console.error('  BASE_URL=https://www.test.plansight.com (optional, this is the default)');
-    process.exit(1);
-  }
-
-  if (!config.loginUsername.includes('@')) {
-    console.error('LOGIN_USERNAME must be a full email address (Auth0 rejects usernames without @).');
-    console.error(`Received: ${config.loginUsername}`);
-    process.exit(1);
-  }
+  requireLoginPassword(
+    {
+      username: config.loginUsername,
+      password: config.loginPassword,
+    },
+    'LOGIN_PASSWORD=yourpassword npm run automate:ps9250:minimum-gate',
+  );
 }
 
 async function runMinimumGate() {
