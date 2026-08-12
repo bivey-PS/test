@@ -371,7 +371,33 @@ async function openCancerTab(page) {
   };
 }
 
-const BENEFITS_PLAN_GROUP_ROWS = [
+async function openAccidentTab(page) {
+  console.log('Clicking Accident tab');
+
+  const medicalTab = page.locator('a[href*="#gridInit/medical"]');
+  await medicalTab.first().waitFor({ timeout: 30000 });
+
+  const accidentTab = page.locator('a[href*="#gridInit/accident"]');
+  await accidentTab.first().waitFor({ state: 'visible', timeout: 90000 });
+  await accidentTab.first().click();
+
+  await page.waitForURL(/#gridInit\/accident/, { timeout: 30000 });
+  await page.locator('.subnav-tab.accident.active-tab').waitFor({ timeout: 15000 });
+
+  console.log('Waiting 3 seconds on Accident page');
+  await page.waitForTimeout(3000);
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'shadybrook-accident-quotes.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved Accident tab screenshot: ${screenshotPath}`);
+
+  return {
+    accidentQuotesUrl: page.url(),
+    screenshotPath,
+  };
+}
+
+const CANCER_BENEFITS_PLAN_GROUP_ROWS = [
   { label: 'Reconstructive Surgery', cssKey: 'reconstructiveSurgery' },
   { label: 'Experimental Treatment', cssKey: 'experimentalTreatment' },
   { label: 'ICU Benefit', cssKey: 'icuBenefit' },
@@ -381,11 +407,22 @@ const BENEFITS_PLAN_GROUP_ROWS = [
   { label: 'Lodging', cssKey: 'lodging', alternatives: ['Loging'] },
 ];
 
-async function waitForCancerBenefitsGrid(page, timeout = 60000) {
+const ACCIDENT_BENEFITS_PLAN_GROUP_ROWS = [
+  { label: 'ICU Admission', cssKey: 'icuAdmission' },
+  { label: 'ICU Per Day', cssKey: 'icuPerDay', alternatives: ['ICU Daily Confinement'] },
+  { label: 'X-Ray Benefit', cssKey: 'xRayBenefit', alternatives: ['X-Ray'] },
+  { label: 'Medical Imaging', cssKey: 'medicalImaging' },
+  { label: 'Follow Up Treatment', cssKey: 'followUpTreatment' },
+  { label: 'Blood/Plasma/Platelets', cssKey: 'bloodPlasmaPlatelets' },
+  { label: 'Appliances', cssKey: 'appliances' },
+  { label: 'Transportation', cssKey: 'transportation' },
+];
+
+async function waitForBenefitsGrid(page, anchorCssKey, timeout = 60000) {
   await page.locator('.ibox-title-plansight').filter({ hasText: 'Plan Group' }).first().waitFor({
     timeout,
   });
-  await page.locator('.plansight-sub-row-benefits-reconstructiveSurgery').first().waitFor({
+  await page.locator(`.plansight-sub-row-benefits-${anchorCssKey}`).first().waitFor({
     timeout,
   });
 }
@@ -416,17 +453,21 @@ async function findBenefitRow(page, { label, cssKey, alternatives = [] }) {
   return null;
 }
 
-async function verifyBenefitsPlanGroupRows(page) {
+async function verifyBenefitsPlanGroupRows(page, options = {}) {
+  const rows = options.rows || CANCER_BENEFITS_PLAN_GROUP_ROWS;
+  const anchorCssKey = options.anchorCssKey || rows[0]?.cssKey || 'reconstructiveSurgery';
+  const reportPrefix = options.reportPrefix || 'benefits-verification';
+
   console.log('Verifying Benefits Plan Group rows');
 
   await page.waitForTimeout(2000);
-  await waitForCancerBenefitsGrid(page);
+  await waitForBenefitsGrid(page, anchorCssKey);
 
   const rowResults = [];
   const verifiedRows = [];
   const missingRows = [];
 
-  for (const row of BENEFITS_PLAN_GROUP_ROWS) {
+  for (const row of rows) {
     console.log(`Checking row: ${row.label}`);
     const foundAs = await findBenefitRow(page, row);
 
@@ -460,12 +501,17 @@ async function verifyBenefitsPlanGroupRows(page) {
     missingRows,
   };
 
-  saveBenefitsVerificationReport(report, page.url());
+  saveBenefitsVerificationReport(report, page.url(), process.env.BASE_URL, reportPrefix);
 
   return report;
 }
 
-function saveBenefitsVerificationReport(report, pageUrl, baseUrl = process.env.BASE_URL) {
+function saveBenefitsVerificationReport(
+  report,
+  pageUrl,
+  baseUrl = process.env.BASE_URL,
+  reportPrefix = 'benefits-verification',
+) {
   const timestamp = new Date().toISOString();
   const jsonReport = {
     jiraTicket: process.env.JIRA_TICKET || null,
@@ -477,7 +523,7 @@ function saveBenefitsVerificationReport(report, pageUrl, baseUrl = process.env.B
     rows: report.rows,
   };
 
-  const jsonPath = path.join(OUTPUT_DIR, 'benefits-verification-report.json');
+  const jsonPath = path.join(OUTPUT_DIR, `${reportPrefix}-report.json`);
   fs.writeFileSync(jsonPath, JSON.stringify(jsonReport, null, 2));
   console.log(`Saved benefits verification report: ${jsonPath}`);
 
@@ -508,7 +554,7 @@ function saveBenefitsVerificationReport(report, pageUrl, baseUrl = process.env.B
     }
   }
 
-  const markdownPath = path.join(OUTPUT_DIR, 'benefits-verification-report.md');
+  const markdownPath = path.join(OUTPUT_DIR, `${reportPrefix}-report.md`);
   fs.writeFileSync(markdownPath, `${markdownLines.join('\n')}\n`);
   console.log(`Saved benefits verification report: ${markdownPath}`);
 
@@ -519,7 +565,19 @@ function saveBenefitsVerificationReport(report, pageUrl, baseUrl = process.env.B
 }
 
 async function verifyReconstructiveSurgeryBenefit(page) {
-  return verifyBenefitsPlanGroupRows(page);
+  return verifyBenefitsPlanGroupRows(page, {
+    rows: CANCER_BENEFITS_PLAN_GROUP_ROWS,
+    anchorCssKey: 'reconstructiveSurgery',
+    reportPrefix: 'benefits-verification',
+  });
+}
+
+async function verifyAccidentBenefitsPlanGroupRows(page) {
+  return verifyBenefitsPlanGroupRows(page, {
+    rows: ACCIDENT_BENEFITS_PLAN_GROUP_ROWS,
+    anchorCssKey: 'icuAdmission',
+    reportPrefix: 'ps-8909-benefits-verification',
+  });
 }
 
 async function saveRecording(page, outputName = 'login-recording') {
@@ -561,8 +619,11 @@ module.exports = {
   openShadybrookLumberRfp,
   openQuotesTab,
   openCancerTab,
+  openAccidentTab,
+  ACCIDENT_BENEFITS_PLAN_GROUP_ROWS,
   verifyBenefitsPlanGroupRows,
   verifyReconstructiveSurgeryBenefit,
+  verifyAccidentBenefitsPlanGroupRows,
   saveBenefitsVerificationReport,
   saveRecording,
 };

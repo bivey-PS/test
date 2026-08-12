@@ -10,7 +10,8 @@
     "test:debug": "playwright test --debug",
     "automate": "node scripts/website-automation.js",
     "automate:login": "node scripts/login-automation.js",
-    "automate:login:ui": "HEADED=1 node scripts/login-automation-ui.js"
+    "automate:login:ui": "HEADED=1 node scripts/login-automation-ui.js",
+    "automate:ps8909": "JIRA_TICKET=PS-8909 node scripts/ps-8909-automation.js"
   },
   "repository": {
     "type": "git",
