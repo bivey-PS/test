@@ -408,27 +408,50 @@ const CANCER_BENEFITS_PLAN_GROUP_ROWS = [
 ];
 
 const ACCIDENT_BENEFITS_PLAN_GROUP_ROWS = [
-  { label: 'ICU Admission', cssKey: 'icuAdmission' },
-  { label: 'ICU Per Day', cssKey: 'icuPerDay', alternatives: ['ICU Daily Confinement'] },
-  { label: 'X-Ray Benefit', cssKey: 'xRayBenefit', alternatives: ['X-Ray'] },
-  { label: 'Medical Imaging', cssKey: 'medicalImaging' },
-  { label: 'Follow Up Treatment', cssKey: 'followUpTreatment' },
-  { label: 'Blood/Plasma/Platelets', cssKey: 'bloodPlasmaPlatelets' },
-  { label: 'Appliances', cssKey: 'appliances' },
-  { label: 'Transportation', cssKey: 'transportation' },
+  { label: 'ICU Admission', cssKey: 'accidentIcuAdmission', selectorPrefix: 'planDesign' },
+  {
+    label: 'ICU Per Day',
+    cssKey: 'accidentIcuPerDay',
+    selectorPrefix: 'planDesign',
+    alternatives: ['ICU Daily Confinement'],
+  },
+  {
+    label: 'X-Ray Benefit',
+    cssKey: 'accidentXRayBenefit',
+    selectorPrefix: 'planDesign',
+    alternatives: ['X-Ray'],
+  },
+  { label: 'Medical Imaging', cssKey: 'accidentMedicalImaging', selectorPrefix: 'planDesign' },
+  {
+    label: 'Follow Up Treatment',
+    cssKey: 'accidentFollowUpTreatment',
+    selectorPrefix: 'planDesign',
+  },
+  {
+    label: 'Blood/Plasma/Platelets',
+    cssKey: 'accidentBloodPlasmaPlatelets',
+    selectorPrefix: 'planDesign',
+  },
+  { label: 'Appliances', cssKey: 'accidentAppliances', selectorPrefix: 'planDesign' },
+  { label: 'Transportation', cssKey: 'accidentTransportation', selectorPrefix: 'planDesign' },
 ];
 
-async function waitForBenefitsGrid(page, anchorCssKey, timeout = 60000) {
+function benefitRowSelector({ cssKey, selectorPrefix = 'benefits' }) {
+  return `.plansight-sub-row-${selectorPrefix}-${cssKey}`;
+}
+
+async function waitForBenefitsGrid(page, anchorCssKey, options = {}, timeout = 60000) {
+  const selectorPrefix = options.selectorPrefix || 'benefits';
   await page.locator('.ibox-title-plansight').filter({ hasText: 'Plan Group' }).first().waitFor({
     timeout,
   });
-  await page.locator(`.plansight-sub-row-benefits-${anchorCssKey}`).first().waitFor({
+  await page.locator(benefitRowSelector({ cssKey: anchorCssKey, selectorPrefix })).first().waitFor({
     timeout,
   });
 }
 
-async function findBenefitRow(page, { label, cssKey, alternatives = [] }) {
-  const selector = `.plansight-sub-row-benefits-${cssKey}`;
+async function findBenefitRow(page, { label, cssKey, alternatives = [], selectorPrefix = 'benefits' }) {
+  const selector = benefitRowSelector({ cssKey, selectorPrefix });
   const row = page.locator(selector).first();
 
   if ((await row.count()) > 0) {
@@ -456,12 +479,13 @@ async function findBenefitRow(page, { label, cssKey, alternatives = [] }) {
 async function verifyBenefitsPlanGroupRows(page, options = {}) {
   const rows = options.rows || CANCER_BENEFITS_PLAN_GROUP_ROWS;
   const anchorCssKey = options.anchorCssKey || rows[0]?.cssKey || 'reconstructiveSurgery';
+  const selectorPrefix = options.selectorPrefix || rows[0]?.selectorPrefix || 'benefits';
   const reportPrefix = options.reportPrefix || 'benefits-verification';
 
   console.log('Verifying Benefits Plan Group rows');
 
   await page.waitForTimeout(2000);
-  await waitForBenefitsGrid(page, anchorCssKey);
+  await waitForBenefitsGrid(page, anchorCssKey, { selectorPrefix });
 
   const rowResults = [];
   const verifiedRows = [];
@@ -477,7 +501,10 @@ async function verifyBenefitsPlanGroupRows(page, options = {}) {
       found,
       matchedAs: foundAs,
       searchedNames: [row.label, ...(row.alternatives || [])],
-      cssSelector: `.plansight-sub-row-benefits-${row.cssKey}`,
+      cssSelector: benefitRowSelector({
+        cssKey: row.cssKey,
+        selectorPrefix: row.selectorPrefix || selectorPrefix,
+      }),
     });
 
     if (found) {
@@ -575,7 +602,8 @@ async function verifyReconstructiveSurgeryBenefit(page) {
 async function verifyAccidentBenefitsPlanGroupRows(page) {
   return verifyBenefitsPlanGroupRows(page, {
     rows: ACCIDENT_BENEFITS_PLAN_GROUP_ROWS,
-    anchorCssKey: 'icuAdmission',
+    anchorCssKey: 'accidentInitialHospitalConfinement',
+    selectorPrefix: 'planDesign',
     reportPrefix: 'ps-8909-benefits-verification',
   });
 }
