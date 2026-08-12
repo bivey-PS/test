@@ -10,7 +10,8 @@
     "test:debug": "playwright test --debug",
     "automate": "node scripts/website-automation.js",
     "automate:login": "node scripts/login-automation.js",
-    "automate:login:ui": "HEADED=1 node scripts/login-automation-ui.js"
+    "automate:login:ui": "HEADED=1 node scripts/login-automation-ui.js",
+    "automate:ps9250:minimum-gate": "JIRA_TICKET=PS-9250 node scripts/ps-9250/minimum-gate.js"
   },
   "repository": {
     "type": "git",

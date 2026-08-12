@@ -4,6 +4,11 @@ const path = require('path');
 const OUTPUT_DIR = path.join(__dirname, '..', '..', 'automation-output');
 const AUTH_STATE_PATH = path.join(OUTPUT_DIR, 'auth-state.json');
 
+function getAuthStatePathForBaseUrl(baseUrl) {
+  const hostname = new URL(baseUrl).hostname.replace(/\./g, '-');
+  return path.join(OUTPUT_DIR, `auth-state-${hostname}.json`);
+}
+
 function authStateMatchesBaseUrl(baseUrl, authStatePath = AUTH_STATE_PATH) {
   if (!fs.existsSync(authStatePath)) {
     return false;
@@ -287,6 +292,90 @@ async function openAceTestingEmployer(page) {
   };
 }
 
+async function openEmployerGroup(page, employerName = 'Ace Testing') {
+  console.log(`Opening employer group: ${employerName}`);
+
+  await page.getByRole('link', { name: employerName, exact: true }).waitFor({
+    timeout: 30000,
+  });
+
+  const employerLink = page.locator('table').getByRole('link', {
+    name: employerName,
+    exact: true,
+  });
+  await employerLink.scrollIntoViewIfNeeded();
+  await employerLink.evaluate((element) => element.click());
+
+  await page.waitForURL(/\/group\/.*#groupUpdate/, { timeout: 30000 });
+  await waitForPageReady(page);
+  await page.getByText('About This Employer').waitFor({ timeout: 60000 });
+
+  const screenshotSlug = employerName.toLowerCase().replace(/\s+/g, '-');
+  const screenshotPath = path.join(OUTPUT_DIR, `${screenshotSlug}-employer.png`);
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved ${employerName} employer screenshot: ${screenshotPath}`);
+
+  return {
+    employerUrl: page.url(),
+    employerName,
+    screenshotPath,
+  };
+}
+
+async function startNewRfpBasicsTab(page) {
+  console.log('Starting new RFP from employer group');
+
+  const startNewRfp = page
+    .getByRole('button', { name: /Start New RFP/i })
+    .or(page.getByRole('link', { name: /Start New RFP/i }))
+    .or(page.locator('a, button').filter({ hasText: /Start New RFP/i }));
+
+  await startNewRfp.first().waitFor({ state: 'visible', timeout: 30000 });
+  await startNewRfp.first().scrollIntoViewIfNeeded();
+  await startNewRfp.first().evaluate((element) => element.click());
+
+  const fromScratch = page
+    .getByRole('button', { name: /from Scratch/i })
+    .or(page.getByRole('link', { name: /from Scratch/i }))
+    .or(page.getByText(/Create an RFP from Scratch/i));
+
+  if (await fromScratch.first().isVisible().catch(() => false)) {
+    await fromScratch.first().evaluate((element) => element.click());
+  }
+
+  await waitForPageReady(page);
+
+  const basicsMarkers = [
+    page.getByText('Basics', { exact: true }),
+    page.getByText(/RFP Name/i),
+    page.getByText(/Effective Date/i),
+    page.getByText(/Plan Design Attributes Template/i),
+    page.locator('.wizard-nav, .rfp-wizard-nav, .nav-tabs').getByText('Basics'),
+  ];
+
+  let basicsFound = false;
+  for (const marker of basicsMarkers) {
+    if ((await marker.count()) > 0) {
+      await marker.first().waitFor({ state: 'visible', timeout: 60000 });
+      basicsFound = true;
+      break;
+    }
+  }
+
+  if (!basicsFound) {
+    throw new Error('Basics tab or Basics wizard fields did not appear after Start New RFP');
+  }
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-rfp-wizard-basics.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved RFP wizard Basics screenshot: ${screenshotPath}`);
+
+  return {
+    wizardUrl: page.url(),
+    screenshotPath,
+  };
+}
+
 async function openShadybrookLumberRfp(page) {
   console.log('Waiting for Request for Proposals section to load');
 
@@ -548,6 +637,7 @@ async function saveRecording(page, outputName = 'login-recording') {
 module.exports = {
   OUTPUT_DIR,
   AUTH_STATE_PATH,
+  getAuthStatePathForBaseUrl,
   isLoggedIn,
   authStateMatchesBaseUrl,
   saveAuthState,
@@ -558,6 +648,8 @@ module.exports = {
   verifyDashboard,
   navigateToEmployers,
   openAceTestingEmployer,
+  openEmployerGroup,
+  startNewRfpBasicsTab,
   openShadybrookLumberRfp,
   openQuotesTab,
   openCancerTab,

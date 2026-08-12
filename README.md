@@ -49,7 +49,26 @@ RECORD_VIDEO=1 LOGIN_USERNAME=... LOGIN_PASSWORD=... MFA_CODE=... npm run automa
 
 # Headed UI demo (always saves automation-output/login-ui-demo.mp4)
 npm run automate:login:ui
+
+# PS-9250 Minimum Gate smoke automation (S1.2, S2.1, S2.2, S3.1)
+LOGIN_USERNAME=your@email.com LOGIN_PASSWORD=yourpassword MFA_CODE=123456 npm run automate:ps9250:minimum-gate
 ```
+
+PS-9250 defaults to `BASE_URL=https://www.test.plansight.com`. Override if needed:
+
+```bash
+BASE_URL=https://www.test.plansight.com EMPLOYER_NAME="Ace Testing" LOGIN_USERNAME=your@email.com LOGIN_PASSWORD=yourpassword MFA_CODE=123456 npm run automate:ps9250:minimum-gate
+```
+
+The PS-9250 Minimum Gate suite verifies:
+- **S1.2** Valid broker login → lands in app
+- **S2.1** Group List loads
+- **S2.2** Open an existing group → loads without error
+- **S3.1** Start new RFP → Basics tab opens
+
+Reports are written to:
+- `automation-output/ps-9250-minimum-gate-report.json`
+- `automation-output/ps-9250-minimum-gate-report.md`
 
 Login script defaults to `BASE_URL=https://test.plansight.com`. Override if needed:
 
@@ -97,6 +116,7 @@ On success, the script saves:
 ```
 scripts/
   lib/plansight-login.js # Shared login + dashboard verification helpers
+  ps-9250/               # PS-9250 Minimum Gate automation suite
   website-automation.js  # General automation script
   login-automation.js    # Plansight Auth0 login script
   login-automation-ui.js # Headed UI demo with MP4 recording
