@@ -67,6 +67,9 @@ The PS-9250 Minimum Gate suite verifies:
 - **S2.1** Group List loads
 - **S2.2** Open an existing group → loads without error
 - **S3.1** Start new RFP → Basics tab opens
+- **S3.2** RFP Basics → Save & Continue
+- **S3.3** Choose Benefit Types → Medical (Marketing) → Save & Continue
+- **S3.3.1** Community Rated Plans → Save & Continue
 
 Reports are written to:
 - `automation-output/ps-9250-minimum-gate-report.json`

@@ -357,7 +357,12 @@ async function startNewRfpBasicsTab(page) {
   }
 
   await page.waitForURL(/#rfpBuilderBasics/, { timeout: 60000 });
-  await waitForPageReady(page);
+  await waitForPageReady(page, 120000);
+
+  const loading = page.getByText('Loading...');
+  if ((await loading.count()) > 0) {
+    await loading.first().waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
+  }
 
   if (!page.url().includes('#rfpBuilderBasics')) {
     throw new Error('Basics wizard URL did not load after Start New RFP');
@@ -370,7 +375,7 @@ async function startNewRfpBasicsTab(page) {
     page.locator('.wizard-nav, .rfp-wizard-nav, .nav-tabs, .sidebar-collapse').getByText(/RFP Basics/i),
   ];
 
-  let basicsFound = false;
+  let basicsFound = page.url().includes('#rfpBuilderBasics');
   for (const marker of basicsMarkers) {
     if ((await marker.count()) > 0 && (await marker.first().isVisible().catch(() => false))) {
       basicsFound = true;
@@ -385,6 +390,106 @@ async function startNewRfpBasicsTab(page) {
   const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-rfp-wizard-basics.png');
   await page.screenshot({ path: screenshotPath, fullPage: false });
   console.log(`Saved RFP wizard Basics screenshot: ${screenshotPath}`);
+
+  return {
+    wizardUrl: page.url(),
+    screenshotPath,
+  };
+}
+
+async function clickSaveAndContinue(page, expectedUrlPattern) {
+  const saveButton = page.getByRole('button', { name: 'Save & Continue' });
+  await saveButton.waitFor({ state: 'visible', timeout: 30000 });
+  await saveButton.scrollIntoViewIfNeeded();
+  await saveButton.click();
+
+  if (expectedUrlPattern) {
+    await page.waitForURL(expectedUrlPattern, { timeout: 60000 });
+  }
+
+  await waitForPageReady(page);
+}
+
+async function saveRfpBasicsAndContinue(page) {
+  console.log('Saving RFP Basics and continuing');
+
+  if (!page.url().includes('#rfpBuilderBasics')) {
+    throw new Error('Expected to be on RFP Basics wizard step');
+  }
+
+  await clickSaveAndContinue(page, /#rfpBuilderPlanTypes/);
+
+  if (!page.url().includes('#rfpBuilderPlanTypes')) {
+    throw new Error('Did not navigate to Choose Benefit Types after saving RFP Basics');
+  }
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-rfp-wizard-benefit-types.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved Benefit Types screenshot: ${screenshotPath}`);
+
+  return {
+    wizardUrl: page.url(),
+    screenshotPath,
+  };
+}
+
+async function selectMedicalMarketingBenefitType(page) {
+  console.log('Selecting Medical in Marketing column on Benefit Types');
+
+  if (!page.url().includes('#rfpBuilderPlanTypes')) {
+    throw new Error('Expected to be on Choose Benefit Types wizard step');
+  }
+
+  const medicalMarketing = page.locator('input[name="planTypeMedical"]');
+  await medicalMarketing.waitFor({ state: 'attached', timeout: 30000 });
+
+  if (!(await medicalMarketing.isChecked())) {
+    await medicalMarketing.check({ force: true });
+  }
+
+  if (!(await medicalMarketing.isChecked())) {
+    throw new Error('Medical Marketing checkbox did not become checked');
+  }
+
+  console.log('Verified Medical Marketing checkbox is checked');
+}
+
+async function saveBenefitTypesAndContinue(page) {
+  console.log('Saving Benefit Types and continuing');
+
+  await selectMedicalMarketingBenefitType(page);
+  await clickSaveAndContinue(page, /#rfpBuilderCommunityRatedPlans/);
+
+  if (!page.url().includes('#rfpBuilderCommunityRatedPlans')) {
+    throw new Error('Did not navigate to Community Rated Plans after saving Benefit Types');
+  }
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-rfp-wizard-community-rated.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved Community Rated Plans screenshot: ${screenshotPath}`);
+
+  return {
+    wizardUrl: page.url(),
+    screenshotPath,
+  };
+}
+
+async function saveCommunityRatedPlansAndContinue(page) {
+  console.log('Saving Community Rated Plans and continuing');
+
+  if (!page.url().includes('#rfpBuilderCommunityRatedPlans')) {
+    throw new Error('Expected to be on Community Rated Plans wizard step');
+  }
+
+  await clickSaveAndContinue(page, /#rfpBuilderDocuments/);
+
+  if (!page.url().includes('#rfpBuilderDocuments')) {
+    throw new Error('Did not navigate to RFP Quoting Documents after saving Community Rated Plans');
+  }
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-rfp-wizard-documents.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved RFP Quoting Documents screenshot: ${screenshotPath}`);
 
   return {
     wizardUrl: page.url(),
@@ -666,6 +771,10 @@ module.exports = {
   openAceTestingEmployer,
   openEmployerGroup,
   startNewRfpBasicsTab,
+  saveRfpBasicsAndContinue,
+  selectMedicalMarketingBenefitType,
+  saveBenefitTypesAndContinue,
+  saveCommunityRatedPlansAndContinue,
   openShadybrookLumberRfp,
   openQuotesTab,
   openCancerTab,

@@ -4,6 +4,9 @@ const {
   navigateToEmployers,
   openEmployerGroup,
   startNewRfpBasicsTab,
+  saveRfpBasicsAndContinue,
+  saveBenefitTypesAndContinue,
+  saveCommunityRatedPlansAndContinue,
   isLoggedIn,
 } = require('../lib/plansight-login');
 
@@ -28,6 +31,21 @@ const SCENARIOS = [
     name: 'Start new RFP → Basics tab opens',
     run: runS31,
   },
+  {
+    id: 'S3.2',
+    name: 'RFP Basics → Save & Continue',
+    run: runS32,
+  },
+  {
+    id: 'S3.3',
+    name: 'Choose Benefit Types → Medical (Marketing) → Save & Continue',
+    run: runS33,
+  },
+  {
+    id: 'S3.3.1',
+    name: 'Community Rated Plans → Save & Continue',
+    run: runS331,
+  },
 ];
 
 async function runS12(page, context, options) {
@@ -47,7 +65,7 @@ async function runS12(page, context, options) {
   };
 }
 
-async function runS21(page, _context, options) {
+async function runS21(page) {
   const employers = await navigateToEmployers(page);
 
   return {
@@ -68,6 +86,33 @@ async function runS22(page, _context, options) {
 
 async function runS31(page) {
   const wizard = await startNewRfpBasicsTab(page);
+
+  return {
+    wizardUrl: wizard.wizardUrl,
+    screenshotPath: wizard.screenshotPath,
+  };
+}
+
+async function runS32(page) {
+  const wizard = await saveRfpBasicsAndContinue(page);
+
+  return {
+    wizardUrl: wizard.wizardUrl,
+    screenshotPath: wizard.screenshotPath,
+  };
+}
+
+async function runS33(page) {
+  const wizard = await saveBenefitTypesAndContinue(page);
+
+  return {
+    wizardUrl: wizard.wizardUrl,
+    screenshotPath: wizard.screenshotPath,
+  };
+}
+
+async function runS331(page) {
+  const wizard = await saveCommunityRatedPlansAndContinue(page);
 
   return {
     wizardUrl: wizard.wizardUrl,
