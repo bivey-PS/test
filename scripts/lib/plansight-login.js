@@ -359,18 +359,20 @@ async function startNewRfpBasicsTab(page) {
   await page.waitForURL(/#rfpBuilderBasics/, { timeout: 60000 });
   await waitForPageReady(page);
 
+  if (!page.url().includes('#rfpBuilderBasics')) {
+    throw new Error('Basics wizard URL did not load after Start New RFP');
+  }
+
   const basicsMarkers = [
-    page.getByText('Basics', { exact: true }),
-    page.getByText(/RFP Name/i),
-    page.getByText(/Effective Date/i),
+    page.locator('label').filter({ hasText: /RFP Name/i }),
+    page.locator('label').filter({ hasText: /Effective Date/i }),
     page.getByText(/Plan Design Attributes Template/i),
-    page.locator('.wizard-nav, .rfp-wizard-nav, .nav-tabs').getByText('Basics'),
+    page.locator('.wizard-nav, .rfp-wizard-nav, .nav-tabs, .sidebar-collapse').getByText(/RFP Basics/i),
   ];
 
   let basicsFound = false;
   for (const marker of basicsMarkers) {
-    if ((await marker.count()) > 0) {
-      await marker.first().waitFor({ state: 'visible', timeout: 60000 });
+    if ((await marker.count()) > 0 && (await marker.first().isVisible().catch(() => false))) {
       basicsFound = true;
       break;
     }
