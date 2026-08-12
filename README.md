@@ -70,6 +70,7 @@ The PS-9250 Minimum Gate suite verifies:
 - **S3.2** RFP Basics → Save & Continue
 - **S3.3** Choose Benefit Types → Medical (Marketing) → Save & Continue
 - **S3.3.1** Community Rated Plans → Save & Continue
+- **S3.4** Documents for Carrier Quoting → Save & Continue
 
 Reports are written to:
 - `automation-output/ps-9250-minimum-gate-report.json`

@@ -497,6 +497,31 @@ async function saveCommunityRatedPlansAndContinue(page) {
   };
 }
 
+async function saveDocumentsForCarrierQuotingAndContinue(page) {
+  console.log('Saving Documents for Carrier Quoting and continuing');
+
+  if (!page.url().includes('#rfpBuilderDocuments')) {
+    throw new Error('Expected to be on Documents for Carrier Quoting wizard step');
+  }
+
+  await clickSaveAndContinue(page, /#rfpBuilderPlanDetails/);
+
+  if (!page.url().includes('#rfpBuilderPlanDetails')) {
+    throw new Error(
+      'Did not navigate to Verify Plan Details after saving Documents for Carrier Quoting',
+    );
+  }
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-rfp-wizard-plan-details.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved Verify Plan Details screenshot: ${screenshotPath}`);
+
+  return {
+    wizardUrl: page.url(),
+    screenshotPath,
+  };
+}
+
 async function openShadybrookLumberRfp(page) {
   console.log('Waiting for Request for Proposals section to load');
 
@@ -775,6 +800,7 @@ module.exports = {
   selectMedicalMarketingBenefitType,
   saveBenefitTypesAndContinue,
   saveCommunityRatedPlansAndContinue,
+  saveDocumentsForCarrierQuotingAndContinue,
   openShadybrookLumberRfp,
   openQuotesTab,
   openCancerTab,

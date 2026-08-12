@@ -7,6 +7,7 @@ const {
   saveRfpBasicsAndContinue,
   saveBenefitTypesAndContinue,
   saveCommunityRatedPlansAndContinue,
+  saveDocumentsForCarrierQuotingAndContinue,
   isLoggedIn,
 } = require('../lib/plansight-login');
 
@@ -45,6 +46,11 @@ const SCENARIOS = [
     id: 'S3.3.1',
     name: 'Community Rated Plans → Save & Continue',
     run: runS331,
+  },
+  {
+    id: 'S3.4',
+    name: 'Documents for Carrier Quoting → Save & Continue',
+    run: runS34,
   },
 ];
 
@@ -113,6 +119,15 @@ async function runS33(page) {
 
 async function runS331(page) {
   const wizard = await saveCommunityRatedPlansAndContinue(page);
+
+  return {
+    wizardUrl: wizard.wizardUrl,
+    screenshotPath: wizard.screenshotPath,
+  };
+}
+
+async function runS34(page) {
+  const wizard = await saveDocumentsForCarrierQuotingAndContinue(page);
 
   return {
     wizardUrl: wizard.wizardUrl,
