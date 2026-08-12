@@ -8,8 +8,27 @@ const {
   getAuthStatePathForBaseUrl,
   authStateMatchesBaseUrl,
   saveAuthState,
+  saveRecording,
 } = require('../lib/plansight-login');
 const { requireLoginPassword } = require('../lib/plansight-credentials');
+
+const RECORD_VIDEO = process.env.RECORD_VIDEO === '1';
+const RECORDING_NAME =
+  process.env.RECORDING_NAME || `${config.reportPrefix}${RECORD_VIDEO ? '-ui-demo' : ''}`;
+const PAUSE_MS = Number(process.env.PAUSE_MS || (RECORD_VIDEO ? 1500 : 0));
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function pauseStep(label) {
+  if (PAUSE_MS <= 0) {
+    return;
+  }
+
+  console.log(`\n=== ${label} ===`);
+  await sleep(PAUSE_MS);
+}
 
 function requireCredentials() {
   requireLoginPassword(
@@ -27,12 +46,15 @@ async function runMinimumGate() {
 
   const authStatePath = getAuthStatePathForBaseUrl(config.baseUrl);
   const browser = await chromium.launch({
-    headless: process.env.HEADED !== '1',
-    slowMo: process.env.HEADED === '1' ? 400 : 0,
+    headless: process.env.HEADED !== '1' && !RECORD_VIDEO,
+    slowMo: process.env.HEADED === '1' || RECORD_VIDEO ? 400 : 0,
   });
 
   const contextOptions = {
     viewport: { width: 1400, height: 900 },
+    recordVideo: RECORD_VIDEO
+      ? { dir: config.outputDir, size: { width: 1400, height: 900 } }
+      : undefined,
   };
 
   if (authStateMatchesBaseUrl(config.baseUrl, authStatePath)) {
@@ -45,6 +67,7 @@ async function runMinimumGate() {
   const scenarioResults = [];
   let reusedSession = false;
   let finalUrl = null;
+  let recordingPath = null;
 
   const loginOptions = {
     baseUrl: config.baseUrl,
@@ -62,6 +85,7 @@ async function runMinimumGate() {
 
     for (const scenario of SCENARIOS) {
       console.log(`\n--- ${scenario.id}: ${scenario.name} ---`);
+      await pauseStep(`${scenario.id}: ${scenario.name}`);
 
       try {
         const result = await scenario.run(page, context, loginOptions);
@@ -83,6 +107,11 @@ async function runMinimumGate() {
         await page.screenshot({ path: errorScreenshot, fullPage: true }).catch(() => {});
         console.error(`Error screenshot saved: ${errorScreenshot}`);
         console.error(`Current URL: ${page.url()}`);
+
+        if (RECORD_VIDEO) {
+          await page.close().catch(() => {});
+          recordingPath = await saveRecording(page, `${RECORDING_NAME}-error`).catch(() => null);
+        }
         break;
       }
     }
@@ -94,7 +123,21 @@ async function runMinimumGate() {
       finalUrl,
       reusedSession,
       authStatePath,
+      recordingPath: null,
     });
+
+    if (RECORD_VIDEO && !recordingPath) {
+      await page.close();
+      recordingPath = await saveRecording(page, RECORDING_NAME);
+    }
+
+    if (recordingPath) {
+      report.recordingPath = recordingPath;
+
+      const reportPath = path.join(config.outputDir, `${config.reportPrefix}-report.json`);
+      fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
+      console.log(`Updated report with recording: ${reportPath}`);
+    }
 
     console.log(
       `\n${config.jiraTicket} ${config.suiteLabel}: ${report.summary.passed}/${report.summary.total} PASS`,
@@ -105,6 +148,10 @@ async function runMinimumGate() {
     }
   } catch (error) {
     console.error(`${config.jiraTicket} automation failed:`, error.message);
+    if (RECORD_VIDEO && !recordingPath) {
+      await page.close().catch(() => {});
+      recordingPath = await saveRecording(page, `${RECORDING_NAME}-error`).catch(() => null);
+    }
     writeReport(config, scenarioResults, {
       finalUrl: page.url(),
       reusedSession,

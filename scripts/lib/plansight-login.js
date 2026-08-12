@@ -325,24 +325,38 @@ async function openEmployerGroup(page, employerName = 'Ace Testing') {
 async function startNewRfpBasicsTab(page) {
   console.log('Starting new RFP from employer group');
 
-  const startNewRfp = page
-    .getByRole('button', { name: /Start New RFP/i })
-    .or(page.getByRole('link', { name: /Start New RFP/i }))
-    .or(page.locator('a, button').filter({ hasText: /Start New RFP/i }));
+  const rfpTable = page.locator('#pending-active-pastDue-rfp-table');
+  await rfpTable.waitFor({ timeout: 30000 });
+  await rfpTable.locator('tbody tr').first().waitFor({ timeout: 30000 });
 
-  await startNewRfp.first().waitFor({ state: 'visible', timeout: 30000 });
-  await startNewRfp.first().scrollIntoViewIfNeeded();
-  await startNewRfp.first().evaluate((element) => element.click());
+  const startRfpButton = page
+    .getByRole('button', { name: /Start RFP/i })
+    .or(page.locator('button, a').filter({ hasText: /^Start RFP/i }));
 
-  const fromScratch = page
-    .getByRole('button', { name: /from Scratch/i })
-    .or(page.getByRole('link', { name: /from Scratch/i }))
-    .or(page.getByText(/Create an RFP from Scratch/i));
+  if (await startRfpButton.first().isVisible().catch(() => false)) {
+    await startRfpButton.first().scrollIntoViewIfNeeded();
+    await startRfpButton.first().click();
 
-  if (await fromScratch.first().isVisible().catch(() => false)) {
-    await fromScratch.first().evaluate((element) => element.click());
+    const startNewRfp = page
+      .getByRole('menuitem', { name: /Start New RFP/i })
+      .or(page.getByRole('link', { name: /Start New RFP/i }))
+      .or(page.locator('a, button, li').filter({ hasText: /^Start New RFP$/i }));
+
+    await startNewRfp.first().waitFor({ state: 'visible', timeout: 10000 });
+    await startNewRfp.first().click();
+  } else {
+    const openWizard = rfpTable.getByRole('link', { name: 'Open RFP Wizard', exact: true }).first();
+    if ((await openWizard.count()) > 0) {
+      await openWizard.scrollIntoViewIfNeeded();
+      await openWizard.evaluate((element) => element.click());
+    } else {
+      const draftBasics = rfpTable.locator('a[href*="#rfpBuilderBasics"]').first();
+      await draftBasics.waitFor({ state: 'attached', timeout: 30000 });
+      await draftBasics.evaluate((element) => element.click());
+    }
   }
 
+  await page.waitForURL(/#rfpBuilderBasics/, { timeout: 60000 });
   await waitForPageReady(page);
 
   const basicsMarkers = [

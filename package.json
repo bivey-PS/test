@@ -11,7 +11,8 @@
     "automate": "node scripts/website-automation.js",
     "automate:login": "node scripts/login-automation.js",
     "automate:login:ui": "HEADED=1 node scripts/login-automation-ui.js",
-    "automate:ps9250:minimum-gate": "JIRA_TICKET=PS-9250 node scripts/ps-9250/minimum-gate.js"
+    "automate:ps9250:minimum-gate": "JIRA_TICKET=PS-9250 node scripts/ps-9250/minimum-gate.js",
+    "automate:ps9250:minimum-gate:ui": "HEADED=1 RECORD_VIDEO=1 JIRA_TICKET=PS-9250 node scripts/ps-9250/minimum-gate.js"
   },
   "repository": {
     "type": "git",

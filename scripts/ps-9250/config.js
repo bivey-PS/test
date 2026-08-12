@@ -8,7 +8,7 @@ const config = {
   jiraTicket: process.env.JIRA_TICKET || 'PS-9250',
   suiteName: 'PS-9250',
   suiteLabel: 'Minimum Gate',
-  baseUrl: process.env.BASE_URL || 'https://www.test.plansight.com',
+  baseUrl: process.env.BASE_URL || 'https://test.plansight.com',
   loginUsername: credentials.username,
   loginPassword: credentials.password,
   mfaCode: credentials.mfaCode,
