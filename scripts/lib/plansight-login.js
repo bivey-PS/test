@@ -542,7 +542,7 @@ async function openMedicalPlanDetails(page) {
 }
 
 async function saveMedicalPlanDetailsAndContinue(page) {
-  console.log('Saving Medical Plan Details and continuing');
+  console.log('Saving Medical Plan Details and clicking Save & go to Distribution');
 
   await openMedicalPlanDetails(page);
 
@@ -550,11 +550,7 @@ async function saveMedicalPlanDetailsAndContinue(page) {
     throw new Error('Expected to be on Medical Plan Details wizard step');
   }
 
-  await clickSaveAndContinue(
-    page,
-    /#rfpBuilderDistributionList/,
-    /Save & go to Distribution|Save & Continue/,
-  );
+  await clickSaveAndContinue(page, /#rfpBuilderDistributionList/, 'Save & go to Distribution');
 
   if (!page.url().includes('#rfpBuilderDistributionList')) {
     throw new Error('Did not navigate to Distribution List after saving Medical Plan Details');
