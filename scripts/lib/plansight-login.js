@@ -139,13 +139,18 @@ async function sessionIsValid(page, baseUrl) {
   const dashboardUrl = `${baseUrl.replace(/\/$/, '')}/app#dashboard`;
 
   try {
-    await page.goto(dashboardUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await page.goto(dashboardUrl, { waitUntil: 'networkidle', timeout: 60000 });
 
-    if (!isLoggedIn(page.url())) {
+    if (
+      !isLoggedIn(page.url()) ||
+      page.url().includes('status=timeout') ||
+      page.url().includes('/login')
+    ) {
       return false;
     }
 
     await page.getByText(/Welcome .+/).waitFor({ timeout: 15000 });
+    await page.getByText('Renewals', { exact: true }).first().waitFor({ timeout: 15000 });
     return true;
   } catch {
     return false;
