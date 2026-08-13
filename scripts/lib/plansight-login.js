@@ -767,30 +767,57 @@ async function verifyRequestForProposalsRfpRow(page, employerName = 'Ace Testing
   const expectedPrefix = buildEmployerDateRfpNamePrefix(employerName, date);
   console.log(`Verifying Request for Proposals row matching: ${expectedPrefix}*`);
 
+  await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
   await waitForPageReady(page);
   await page.getByText('About This Employer').waitFor({ timeout: 60000 });
 
-  const rfpTable = page.locator('#pending-active-pastDue-rfp-table');
-  await rfpTable.scrollIntoViewIfNeeded();
-  await rfpTable.waitFor({ timeout: 30000 });
-  await rfpTable.locator('tbody tr').first().waitFor({ timeout: 30000 });
+  let matchedName = null;
+  let rfpNames = [];
 
-  const sectionTitle = await page.evaluate(() => {
-    const table = document.querySelector('#pending-active-pastDue-rfp-table');
-    const section = table?.closest('.ibox, .panel, section, .widget, .card, [class*="section"]');
-    const heading = section?.querySelector('h1, h2, h3, h4, h5, .ibox-title, .panel-heading');
-    return heading?.textContent?.trim() || null;
-  });
+  for (let attempt = 0; attempt < 5 && !matchedName; attempt += 1) {
+    if (attempt > 0) {
+      await page.waitForTimeout(2000);
+      await waitForPageReady(page);
+    }
 
-  if (sectionTitle) {
-    console.log(`Found RFP table section: ${sectionTitle}`);
+    const rfpTable = page.locator('#pending-active-pastDue-rfp-table').first();
+    await rfpTable.scrollIntoViewIfNeeded();
+    await rfpTable.waitFor({ timeout: 30000 });
+    await rfpTable.locator('tbody tr').first().waitFor({ timeout: 30000 });
+
+    const sectionTitle = await page.evaluate(() => {
+      const table = document.querySelector('#pending-active-pastDue-rfp-table');
+      const section = table?.closest('.ibox, .panel, section, .widget, .card, [class*="section"]');
+      const heading = section?.querySelector('h1, h2, h3, h4, h5, .ibox-title, .panel-heading');
+      return heading?.textContent?.trim() || null;
+    });
+
+    if (sectionTitle) {
+      console.log(`Found RFP table section: ${sectionTitle}`);
+    }
+
+    const tableWrapper = page.locator('#pending-active-pastDue-rfp-table').first().locator('xpath=ancestor::div[contains(@class,"dataTables_wrapper")]');
+    const maxPages = 10;
+
+    for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {
+      rfpNames = (await rfpTable.locator('tbody tr .name').allTextContents())
+        .map((name) => name.trim())
+        .filter(Boolean);
+
+      matchedName = rfpNames.find((name) => name.startsWith(expectedPrefix));
+      if (matchedName) {
+        break;
+      }
+
+      const nextPage = tableWrapper.locator('.paginate_button.next:not(.disabled), .next:not(.disabled)').first();
+      if ((await nextPage.count()) === 0) {
+        break;
+      }
+
+      await nextPage.click();
+      await page.waitForTimeout(1000);
+    }
   }
-
-  const rfpNames = (await rfpTable.locator('tbody tr .name').allTextContents())
-    .map((name) => name.trim())
-    .filter(Boolean);
-
-  const matchedName = rfpNames.find((name) => name.startsWith(expectedPrefix));
 
   if (!matchedName) {
     throw new Error(
