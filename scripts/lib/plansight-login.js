@@ -556,9 +556,75 @@ async function saveMedicalPlanDetailsAndContinue(page) {
     throw new Error('Did not navigate to Distribution List after saving Medical Plan Details');
   }
 
+  await page.getByText(/Who Gets the RFP\?/i).waitFor({ state: 'visible', timeout: 120000 });
+  await page.getByText('Loading...').waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
+  await waitForPageReady(page);
+
   const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-rfp-wizard-distribution-list.png');
   await page.screenshot({ path: screenshotPath, fullPage: false });
   console.log(`Saved Distribution List screenshot: ${screenshotPath}`);
+
+  return {
+    wizardUrl: page.url(),
+    screenshotPath,
+  };
+}
+
+async function selectMedicalFromDistributionListDropdown(page) {
+  console.log('Opening ellipsis menu on Who Gets the RFP and selecting Medical');
+
+  if (!page.url().includes('#rfpBuilderDistributionList')) {
+    throw new Error('Expected to be on Who Gets the RFP (Distribution List) wizard step');
+  }
+
+  await page.getByText(/Who Gets the RFP\?/i).waitFor({ state: 'visible', timeout: 120000 });
+  await page.getByText('Loading...').waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
+  await waitForPageReady(page);
+
+  const selected = await page.evaluate(() => {
+    const icons = [...document.querySelectorAll('[data-icon="ellipsis-vertical"]')];
+
+    for (const icon of icons) {
+      const toggle = icon.closest('a, button');
+      if (!toggle) {
+        continue;
+      }
+
+      toggle.click();
+
+      const openMenu = document.querySelector('.dropdown-menu.show, .dropdown.open .dropdown-menu');
+      if (!openMenu) {
+        continue;
+      }
+
+      const medicalItem = [...openMenu.querySelectorAll('a, li, button, span')].find(
+        (element) => (element.textContent || '').trim() === 'Medical',
+      );
+
+      if (medicalItem) {
+        medicalItem.click();
+        return true;
+      }
+
+      toggle.click();
+    }
+
+    return false;
+  });
+
+  if (!selected) {
+    throw new Error('Could not select Medical from the Distribution List ellipsis menu');
+  }
+
+  await waitForPageReady(page);
+
+  if (!page.url().includes('#rfpBuilderDistributionList')) {
+    throw new Error('Medical selection did not stay on Distribution List wizard step');
+  }
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-rfp-distribution-medical-selected.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved Distribution List Medical selected screenshot: ${screenshotPath}`);
 
   return {
     wizardUrl: page.url(),
@@ -846,6 +912,7 @@ module.exports = {
   saveCommunityRatedPlansAndContinue,
   saveDocumentsForCarrierQuotingAndContinue,
   saveMedicalPlanDetailsAndContinue,
+  selectMedicalFromDistributionListDropdown,
   openShadybrookLumberRfp,
   openQuotesTab,
   openCancerTab,

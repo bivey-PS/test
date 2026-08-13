@@ -9,6 +9,7 @@ const {
   saveCommunityRatedPlansAndContinue,
   saveDocumentsForCarrierQuotingAndContinue,
   saveMedicalPlanDetailsAndContinue,
+  selectMedicalFromDistributionListDropdown,
   isLoggedIn,
 } = require('../lib/plansight-login');
 
@@ -57,6 +58,11 @@ const SCENARIOS = [
     id: 'S3.5',
     name: 'Medical Plan Details → Save & go to Distribution',
     run: runS35,
+  },
+  {
+    id: 'S3.6',
+    name: 'Who Gets the RFP? → ellipsis menu → Medical',
+    run: runS36,
   },
 ];
 
@@ -143,6 +149,15 @@ async function runS34(page) {
 
 async function runS35(page) {
   const wizard = await saveMedicalPlanDetailsAndContinue(page);
+
+  return {
+    wizardUrl: wizard.wizardUrl,
+    screenshotPath: wizard.screenshotPath,
+  };
+}
+
+async function runS36(page) {
+  const wizard = await selectMedicalFromDistributionListDropdown(page);
 
   return {
     wizardUrl: wizard.wizardUrl,
