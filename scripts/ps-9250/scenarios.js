@@ -61,7 +61,7 @@ const SCENARIOS = [
   },
   {
     id: 'S3.6',
-    name: 'Who Gets the RFP? → ellipsis menu → Medical',
+    name: 'Who Gets the RFP? → ellipsis menu → Medical → Quotes tab (#gridInit/medical)',
     run: runS36,
   },
 ];
@@ -157,11 +157,11 @@ async function runS35(page) {
 }
 
 async function runS36(page) {
-  const wizard = await selectMedicalFromDistributionListDropdown(page);
+  const quotes = await selectMedicalFromDistributionListDropdown(page);
 
   return {
-    wizardUrl: wizard.wizardUrl,
-    screenshotPath: wizard.screenshotPath,
+    quotesUrl: quotes.quotesUrl,
+    screenshotPath: quotes.screenshotPath,
   };
 }
 

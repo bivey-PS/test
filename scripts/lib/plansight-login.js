@@ -597,12 +597,14 @@ async function selectMedicalFromDistributionListDropdown(page) {
         continue;
       }
 
-      const medicalItem = [...openMenu.querySelectorAll('a, li, button, span')].find(
-        (element) => (element.textContent || '').trim() === 'Medical',
+      const medicalLink = [...openMenu.querySelectorAll('a')].find(
+        (anchor) =>
+          (anchor.textContent || '').trim() === 'Medical' &&
+          anchor.href.includes('gridInit/medical'),
       );
 
-      if (medicalItem) {
-        medicalItem.click();
+      if (medicalLink) {
+        medicalLink.click();
         return true;
       }
 
@@ -616,18 +618,32 @@ async function selectMedicalFromDistributionListDropdown(page) {
     throw new Error('Could not select Medical from the Distribution List ellipsis menu');
   }
 
+  await page.waitForURL(/#gridInit\/medical/, { timeout: 60000 });
   await waitForPageReady(page);
 
-  if (!page.url().includes('#rfpBuilderDistributionList')) {
-    throw new Error('Medical selection did not stay on Distribution List wizard step');
+  const currentUrl = page.url();
+  if (!currentUrl.endsWith('#gridInit/medical')) {
+    throw new Error(
+      `Expected URL to end with #gridInit/medical after selecting Medical, got: ${currentUrl}`,
+    );
   }
 
-  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-rfp-distribution-medical-selected.png');
+  const quotesTab = page.locator('.group-nav-tabs-container li.group-nav-tab.quotes.active-tab');
+  await quotesTab.waitFor({ state: 'visible', timeout: 30000 });
+
+  const quotesTabText = (await quotesTab.textContent())?.trim();
+  if (!/quotes/i.test(quotesTabText || '')) {
+    throw new Error('Quotes tab is not highlighted after selecting Medical from Distribution List');
+  }
+
+  console.log('Verified Quotes tab is highlighted and URL ends with #gridInit/medical');
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-rfp-medical-quotes.png');
   await page.screenshot({ path: screenshotPath, fullPage: false });
-  console.log(`Saved Distribution List Medical selected screenshot: ${screenshotPath}`);
+  console.log(`Saved Medical Quotes screenshot: ${screenshotPath}`);
 
   return {
-    wizardUrl: page.url(),
+    quotesUrl: currentUrl,
     screenshotPath,
   };
 }
