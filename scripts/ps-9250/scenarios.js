@@ -55,7 +55,7 @@ const SCENARIOS = [
   },
   {
     id: 'S3.5',
-    name: 'Medical Plan Details → Save & Continue',
+    name: 'Medical Plan Details → Save & go to Distribution',
     run: runS35,
   },
 ];
