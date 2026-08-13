@@ -397,8 +397,10 @@ async function startNewRfpBasicsTab(page) {
   };
 }
 
-async function clickSaveAndContinue(page, expectedUrlPattern) {
-  const saveButton = page.getByRole('button', { name: 'Save & Continue' });
+async function clickSaveAndContinue(page, expectedUrlPattern, buttonNamePattern = 'Save & Continue') {
+  const saveButton = page.getByRole('button', {
+    name: typeof buttonNamePattern === 'string' ? new RegExp(buttonNamePattern, 'i') : buttonNamePattern,
+  });
   await saveButton.waitFor({ state: 'visible', timeout: 30000 });
   await saveButton.scrollIntoViewIfNeeded();
   await saveButton.click();
@@ -515,6 +517,52 @@ async function saveDocumentsForCarrierQuotingAndContinue(page) {
   const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-rfp-wizard-plan-details.png');
   await page.screenshot({ path: screenshotPath, fullPage: false });
   console.log(`Saved Verify Plan Details screenshot: ${screenshotPath}`);
+
+  return {
+    wizardUrl: page.url(),
+    screenshotPath,
+  };
+}
+
+async function openMedicalPlanDetails(page) {
+  if (page.url().includes('#rfpBuilderPlanDetails') && page.url().includes('planType=medical')) {
+    return;
+  }
+
+  if (!page.url().includes('#rfpBuilderPlanDetails')) {
+    throw new Error('Expected to be on Verify Plan Details wizard step');
+  }
+
+  const medicalPlanDetails = page.locator('a[href*="#rfpBuilderPlanDetails"][href*="planType=medical"]');
+  if ((await medicalPlanDetails.count()) > 0) {
+    await medicalPlanDetails.first().click();
+    await page.waitForURL(/#rfpBuilderPlanDetails.*planType=medical/, { timeout: 60000 });
+    await waitForPageReady(page);
+  }
+}
+
+async function saveMedicalPlanDetailsAndContinue(page) {
+  console.log('Saving Medical Plan Details and continuing');
+
+  await openMedicalPlanDetails(page);
+
+  if (!page.url().includes('#rfpBuilderPlanDetails')) {
+    throw new Error('Expected to be on Medical Plan Details wizard step');
+  }
+
+  await clickSaveAndContinue(
+    page,
+    /#rfpBuilderDistributionList/,
+    /Save & go to Distribution|Save & Continue/,
+  );
+
+  if (!page.url().includes('#rfpBuilderDistributionList')) {
+    throw new Error('Did not navigate to Distribution List after saving Medical Plan Details');
+  }
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-rfp-wizard-distribution-list.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved Distribution List screenshot: ${screenshotPath}`);
 
   return {
     wizardUrl: page.url(),
@@ -801,6 +849,7 @@ module.exports = {
   saveBenefitTypesAndContinue,
   saveCommunityRatedPlansAndContinue,
   saveDocumentsForCarrierQuotingAndContinue,
+  saveMedicalPlanDetailsAndContinue,
   openShadybrookLumberRfp,
   openQuotesTab,
   openCancerTab,
