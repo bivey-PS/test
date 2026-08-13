@@ -755,6 +755,62 @@ async function clickBackToEmployerProfile(page, employerName = 'Ace Testing') {
   };
 }
 
+function buildEmployerDateRfpNamePrefix(employerName, date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+
+  return `${employerName} ${year}-${month}-${day}`;
+}
+
+async function verifyRequestForProposalsRfpRow(page, employerName = 'Ace Testing', date = new Date()) {
+  const expectedPrefix = buildEmployerDateRfpNamePrefix(employerName, date);
+  console.log(`Verifying Request for Proposals row matching: ${expectedPrefix}*`);
+
+  await waitForPageReady(page);
+  await page.getByText('About This Employer').waitFor({ timeout: 60000 });
+
+  const rfpTable = page.locator('#pending-active-pastDue-rfp-table');
+  await rfpTable.scrollIntoViewIfNeeded();
+  await rfpTable.waitFor({ timeout: 30000 });
+  await rfpTable.locator('tbody tr').first().waitFor({ timeout: 30000 });
+
+  const sectionTitle = await page.evaluate(() => {
+    const table = document.querySelector('#pending-active-pastDue-rfp-table');
+    const section = table?.closest('.ibox, .panel, section, .widget, .card, [class*="section"]');
+    const heading = section?.querySelector('h1, h2, h3, h4, h5, .ibox-title, .panel-heading');
+    return heading?.textContent?.trim() || null;
+  });
+
+  if (sectionTitle) {
+    console.log(`Found RFP table section: ${sectionTitle}`);
+  }
+
+  const rfpNames = (await rfpTable.locator('tbody tr .name').allTextContents())
+    .map((name) => name.trim())
+    .filter(Boolean);
+
+  const matchedName = rfpNames.find((name) => name.startsWith(expectedPrefix));
+
+  if (!matchedName) {
+    throw new Error(
+      `No Request for Proposals row found matching "${expectedPrefix}*". Found: ${rfpNames.slice(0, 5).join(' | ') || 'none'}`,
+    );
+  }
+
+  console.log(`Verified Request for Proposals row: ${matchedName}`);
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-rfp-row-verified.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved Request for Proposals verification screenshot: ${screenshotPath}`);
+
+  return {
+    expectedPrefix,
+    matchedName,
+    screenshotPath,
+  };
+}
+
 async function openShadybrookLumberRfp(page) {
   console.log('Waiting for Request for Proposals section to load');
 
@@ -1037,6 +1093,8 @@ module.exports = {
   saveMedicalPlanDetailsAndContinue,
   selectMedicalFromDistributionListDropdown,
   clickBackToEmployerProfile,
+  verifyRequestForProposalsRfpRow,
+  buildEmployerDateRfpNamePrefix,
   openShadybrookLumberRfp,
   openQuotesTab,
   openCancerTab,

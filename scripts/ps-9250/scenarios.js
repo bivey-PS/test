@@ -11,6 +11,7 @@ const {
   saveMedicalPlanDetailsAndContinue,
   selectMedicalFromDistributionListDropdown,
   clickBackToEmployerProfile,
+  verifyRequestForProposalsRfpRow,
   isLoggedIn,
 } = require('../lib/plansight-login');
 
@@ -69,6 +70,11 @@ const SCENARIOS = [
     id: 'S3.7',
     name: 'Back to employer profile link → employer profile loads',
     run: runS37,
+  },
+  {
+    id: 'S3.8',
+    name: 'Request for Proposals → row for Ace Testing {current date}*',
+    run: runS38,
   },
 ];
 
@@ -179,6 +185,16 @@ async function runS37(page, _context, options) {
     employerName: employer.employerName,
     employerUrl: employer.employerUrl,
     screenshotPath: employer.screenshotPath,
+  };
+}
+
+async function runS38(page, _context, options) {
+  const rfpRow = await verifyRequestForProposalsRfpRow(page, options.employerName);
+
+  return {
+    expectedPrefix: rfpRow.expectedPrefix,
+    matchedName: rfpRow.matchedName,
+    screenshotPath: rfpRow.screenshotPath,
   };
 }
 
