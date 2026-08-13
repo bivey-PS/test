@@ -56,10 +56,10 @@ LOGIN_PASSWORD=yourpassword MFA_CODE=123456 npm run automate:ps9250:minimum-gate
 
 Defaults to broker user `b.ivey@plansight.com` (same as PS-8910 login automation). Override with `LOGIN_USERNAME` if needed.
 
-PS-9250 defaults to `BASE_URL=https://www.test.plansight.com`. Override if needed:
+PS-9250 defaults to `BASE_URL=https://test.plansight.com`. Override if needed:
 
 ```bash
-BASE_URL=https://www.test.plansight.com EMPLOYER_NAME="Ace Testing" LOGIN_PASSWORD=yourpassword MFA_CODE=123456 npm run automate:ps9250:minimum-gate
+BASE_URL=https://test.plansight.com EMPLOYER_NAME="Ace Testing" LOGIN_PASSWORD=yourpassword MFA_CODE=123456 npm run automate:ps9250:minimum-gate
 ```
 
 The PS-9250 Minimum Gate suite verifies:

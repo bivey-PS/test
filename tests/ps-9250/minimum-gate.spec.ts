@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-const BASE_URL = process.env.BASE_URL || 'https://www.test.plansight.com';
+const BASE_URL = process.env.BASE_URL || 'https://test.plansight.com';
 const LOGIN_USERNAME =
   process.env.LOGIN_USERNAME || process.env.LOGIN_EMAIL || 'b.ivey@plansight.com';
 const LOGIN_PASSWORD = process.env.LOGIN_PASSWORD;
