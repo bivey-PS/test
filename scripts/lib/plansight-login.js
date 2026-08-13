@@ -721,6 +721,40 @@ async function selectMedicalFromDistributionListDropdown(page) {
   };
 }
 
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+async function clickBackToEmployerProfile(page, employerName = 'Ace Testing') {
+  console.log(`Clicking Back to ${employerName} Profile link`);
+
+  await waitForPageReady(page);
+
+  const backLink = page.getByRole('link', {
+    name: new RegExp(`Back to ${escapeRegExp(employerName)} Profile`, 'i'),
+  });
+  await backLink.first().waitFor({ state: 'visible', timeout: 30000 });
+  await backLink.first().scrollIntoViewIfNeeded();
+  await backLink.first().click();
+
+  await page.waitForURL(/\/group\/.*#groupUpdate/, { timeout: 60000 });
+  await waitForPageReady(page);
+  await page.getByText('About This Employer').waitFor({ timeout: 60000 });
+
+  const screenshotPath = path.join(
+    OUTPUT_DIR,
+    `${employerName.toLowerCase().replace(/\s+/g, '-')}-profile-return.png`,
+  );
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved ${employerName} profile return screenshot: ${screenshotPath}`);
+
+  return {
+    employerName,
+    employerUrl: page.url(),
+    screenshotPath,
+  };
+}
+
 async function openShadybrookLumberRfp(page) {
   console.log('Waiting for Request for Proposals section to load');
 
@@ -1002,6 +1036,7 @@ module.exports = {
   saveDocumentsForCarrierQuotingAndContinue,
   saveMedicalPlanDetailsAndContinue,
   selectMedicalFromDistributionListDropdown,
+  clickBackToEmployerProfile,
   openShadybrookLumberRfp,
   openQuotesTab,
   openCancerTab,

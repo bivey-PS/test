@@ -10,6 +10,7 @@ const {
   saveDocumentsForCarrierQuotingAndContinue,
   saveMedicalPlanDetailsAndContinue,
   selectMedicalFromDistributionListDropdown,
+  clickBackToEmployerProfile,
   isLoggedIn,
 } = require('../lib/plansight-login');
 
@@ -63,6 +64,11 @@ const SCENARIOS = [
     id: 'S3.6',
     name: 'Who Gets the RFP? → ellipsis menu → Medical → Quotes tab with Vision and Dental tabs',
     run: runS36,
+  },
+  {
+    id: 'S3.7',
+    name: 'Back to employer profile link → employer profile loads',
+    run: runS37,
   },
 ];
 
@@ -163,6 +169,16 @@ async function runS36(page) {
     quotesUrl: quotes.quotesUrl,
     screenshotPath: quotes.screenshotPath,
     verifiedTabs: quotes.verifiedTabs,
+  };
+}
+
+async function runS37(page, _context, options) {
+  const employer = await clickBackToEmployerProfile(page, options.employerName);
+
+  return {
+    employerName: employer.employerName,
+    employerUrl: employer.employerUrl,
+    screenshotPath: employer.screenshotPath,
   };
 }
 

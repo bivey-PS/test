@@ -73,6 +73,7 @@ The PS-9250 Minimum Gate suite verifies:
 - **S3.4** Documents for Carrier Quoting → Save & Continue
 - **S3.5** Medical Plan Details → Save & go to Distribution
 - **S3.6** Who Gets the RFP? → ellipsis menu → Medical → Quotes tab highlighted (`#gridInit/medical`) with **Vision** and **Dental** subnav tabs
+- **S3.7** Back to employer profile link → employer profile loads
 
 Reports are written to:
 - `automation-output/ps-9250-minimum-gate-report.json`
