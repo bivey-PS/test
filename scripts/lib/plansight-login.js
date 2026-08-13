@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { evaluateBasicsWizardLoaded } = require('./basics-wizard');
 
 const OUTPUT_DIR = path.join(__dirname, '..', '..', 'automation-output');
 const AUTH_STATE_PATH = path.join(OUTPUT_DIR, 'auth-state.json');
@@ -364,10 +365,6 @@ async function startNewRfpBasicsTab(page) {
     await loading.first().waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
   }
 
-  if (!page.url().includes('#rfpBuilderBasics')) {
-    throw new Error('Basics wizard URL did not load after Start New RFP');
-  }
-
   const basicsMarkers = [
     page.locator('label').filter({ hasText: /RFP Name/i }),
     page.locator('label').filter({ hasText: /Effective Date/i }),
@@ -375,16 +372,28 @@ async function startNewRfpBasicsTab(page) {
     page.locator('.wizard-nav, .rfp-wizard-nav, .nav-tabs, .sidebar-collapse').getByText(/RFP Basics/i),
   ];
 
-  let basicsFound = page.url().includes('#rfpBuilderBasics');
+  // Require a visible Basics field/nav marker. URL #rfpBuilderBasics alone always
+  // matches after waitForURL above, so initializing from the URL made S3.1 a no-op.
+  let visibleMarkerFound = false;
   for (const marker of basicsMarkers) {
-    if ((await marker.count()) > 0 && (await marker.first().isVisible().catch(() => false))) {
-      basicsFound = true;
+    try {
+      await marker.first().waitFor({ state: 'visible', timeout: 15000 });
+      visibleMarkerFound = true;
       break;
+    } catch {
+      // Try the next marker before failing the scenario.
     }
   }
 
-  if (!basicsFound) {
-    throw new Error('Basics tab or Basics wizard fields did not appear after Start New RFP');
+  const basicsCheck = evaluateBasicsWizardLoaded({
+    url: page.url(),
+    visibleMarkerFound,
+  });
+  if (!basicsCheck.pass) {
+    throw new Error(
+      basicsCheck.failReason ||
+        'Basics tab or Basics wizard fields did not appear after Start New RFP',
+    );
   }
 
   const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-rfp-wizard-basics.png');
@@ -808,4 +817,5 @@ module.exports = {
   verifyReconstructiveSurgeryBenefit,
   saveBenefitsVerificationReport,
   saveRecording,
+  evaluateBasicsWizardLoaded,
 };
