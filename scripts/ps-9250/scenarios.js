@@ -41,7 +41,7 @@ const SCENARIOS = [
   },
   {
     id: 'S3.3',
-    name: 'Choose Benefit Types → Medical (Marketing) → Save & Continue',
+    name: 'Choose Benefit Types → Medical, Vision, Dental (Marketing) → Save & Continue',
     run: runS33,
   },
   {
@@ -61,7 +61,7 @@ const SCENARIOS = [
   },
   {
     id: 'S3.6',
-    name: 'Who Gets the RFP? → ellipsis menu → Medical → Quotes tab (#gridInit/medical)',
+    name: 'Who Gets the RFP? → ellipsis menu → Medical → Quotes tab with Vision and Dental tabs',
     run: runS36,
   },
 ];
@@ -162,6 +162,7 @@ async function runS36(page) {
   return {
     quotesUrl: quotes.quotesUrl,
     screenshotPath: quotes.screenshotPath,
+    verifiedTabs: quotes.verifiedTabs,
   };
 }
 

@@ -68,11 +68,11 @@ The PS-9250 Minimum Gate suite verifies:
 - **S2.2** Open an existing group → loads without error
 - **S3.1** Start new RFP → Basics tab opens
 - **S3.2** RFP Basics → Save & Continue
-- **S3.3** Choose Benefit Types → Medical (Marketing) → Save & Continue
+- **S3.3** Choose Benefit Types → Medical, Vision, Dental (Marketing) → Save & Continue
 - **S3.3.1** Community Rated Plans → Save & Continue
 - **S3.4** Documents for Carrier Quoting → Save & Continue
 - **S3.5** Medical Plan Details → Save & go to Distribution
-- **S3.6** Who Gets the RFP? → ellipsis menu → Medical → Quotes tab highlighted (`#gridInit/medical`)
+- **S3.6** Who Gets the RFP? → ellipsis menu → Medical → Quotes tab highlighted (`#gridInit/medical`) with **Vision** and **Dental** subnav tabs
 
 Reports are written to:
 - `automation-output/ps-9250-minimum-gate-report.json`

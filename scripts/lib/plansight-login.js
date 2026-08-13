@@ -159,6 +159,7 @@ async function ensureLoggedIn(page, context, { baseUrl, username, password, mfaC
   }
 
   console.log('Saved session unavailable or expired — performing login');
+  await context.clearCookies();
   await login(page, { baseUrl, username, password, mfaCode });
 
   if (context) {
@@ -170,6 +171,17 @@ async function ensureLoggedIn(page, context, { baseUrl, username, password, mfaC
 
 async function login(page, { baseUrl, username, password, mfaCode }) {
   await page.goto(baseUrl, { waitUntil: 'networkidle', timeout: 60000 });
+
+  if (page.url().includes('/u/mfa-sms-challenge')) {
+    console.log('On SMS MFA challenge page');
+    await completeMfa(page, mfaCode);
+
+    if (!isLoggedIn(page.url())) {
+      await page.waitForURL((url) => isLoggedIn(url), { timeout: 30000 });
+    }
+
+    return;
+  }
 
   await page.waitForURL(/\/u\/login\/identifier/, { timeout: 30000 });
   console.log('On login identifier page');
@@ -436,24 +448,44 @@ async function saveRfpBasicsAndContinue(page) {
 }
 
 async function selectMedicalMarketingBenefitType(page) {
-  console.log('Selecting Medical in Marketing column on Benefit Types');
+  console.log('Selecting Medical, Vision, and Dental in Marketing column on Benefit Types');
 
   if (!page.url().includes('#rfpBuilderPlanTypes')) {
     throw new Error('Expected to be on Choose Benefit Types wizard step');
   }
 
-  const medicalMarketing = page.locator('input[name="planTypeMedical"]');
-  await medicalMarketing.waitFor({ state: 'attached', timeout: 30000 });
+  for (const benefitName of ['planTypeMedical', 'planTypeVision', 'planTypeDental']) {
+    const benefitCheckbox = page.locator(`input[name="${benefitName}"]`);
+    await benefitCheckbox.waitFor({ state: 'attached', timeout: 30000 });
 
-  if (!(await medicalMarketing.isChecked())) {
-    await medicalMarketing.check({ force: true });
+    if (!(await benefitCheckbox.isChecked())) {
+      await benefitCheckbox.check({ force: true });
+    }
+
+    if (!(await benefitCheckbox.isChecked())) {
+      throw new Error(`${benefitName} Marketing checkbox did not become checked`);
+    }
   }
 
-  if (!(await medicalMarketing.isChecked())) {
-    throw new Error('Medical Marketing checkbox did not become checked');
-  }
+  console.log('Verified Medical, Vision, and Dental Marketing checkboxes are checked');
+}
 
-  console.log('Verified Medical Marketing checkbox is checked');
+async function verifyQuotesBenefitSubnavTabs(page, tabNames) {
+  for (const tabName of tabNames) {
+    const tab = page
+      .locator('.subnav-tab')
+      .filter({ has: page.getByRole('link', { name: tabName, exact: true }) })
+      .or(page.locator('.subnav-tab').filter({ hasText: new RegExp(`^${tabName}$`, 'i') }));
+
+    await tab.first().waitFor({ state: 'visible', timeout: 30000 });
+
+    const tabText = (await tab.first().textContent())?.trim();
+    if (!new RegExp(`^${tabName}$`, 'i').test(tabText || '')) {
+      throw new Error(`Expected Quotes subnav tab "${tabName}" was not found`);
+    }
+
+    console.log(`Verified Quotes subnav tab: ${tabName}`);
+  }
 }
 
 async function saveBenefitTypesAndContinue(page) {
@@ -542,18 +574,56 @@ async function openMedicalPlanDetails(page) {
 }
 
 async function saveMedicalPlanDetailsAndContinue(page) {
-  console.log('Saving Medical Plan Details and clicking Save & go to Distribution');
+  console.log('Saving Plan Details and continuing through benefit steps to Distribution');
 
   await openMedicalPlanDetails(page);
 
   if (!page.url().includes('#rfpBuilderPlanDetails')) {
-    throw new Error('Expected to be on Medical Plan Details wizard step');
+    throw new Error('Expected to be on Verify Plan Details wizard step');
   }
 
-  await clickSaveAndContinue(page, /#rfpBuilderDistributionList/, 'Save & go to Distribution');
+  for (let step = 0; step < 10; step += 1) {
+    if (page.url().includes('#rfpBuilderDistributionList')) {
+      break;
+    }
+
+    await page
+      .locator('#content-loading-spinner, #content-overlay, .overlay')
+      .waitFor({ state: 'hidden', timeout: 120000 })
+      .catch(() => {});
+    await page.getByText('Loading...').waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
+    await waitForPageReady(page);
+
+    const saveButton = page.locator('button.save-button:not([disabled])').filter({
+      hasText: /Save & go to/i,
+    });
+    await saveButton.first().waitFor({ state: 'visible', timeout: 30000 });
+    const buttonLabel = (await saveButton.first().textContent())?.trim().replace(/\s+/g, ' ') || '';
+
+    await saveButton.first().scrollIntoViewIfNeeded();
+    await saveButton.first().evaluate((element) => element.click());
+
+    if (/Save & go to Distribution/i.test(buttonLabel)) {
+      await page.waitForURL(/#rfpBuilderDistributionList/, { timeout: 120000 });
+      break;
+    }
+
+    if (/Save & go to Dental/i.test(buttonLabel)) {
+      await page.waitForURL(/planType=dental/, { timeout: 60000 });
+    } else if (/Save & go to Vision/i.test(buttonLabel)) {
+      await page.waitForURL(/planType=vision/, { timeout: 60000 });
+    } else {
+      await page.waitForTimeout(2000);
+      if (page.url().includes('#rfpBuilderDistributionList')) {
+        break;
+      }
+    }
+
+    await waitForPageReady(page);
+  }
 
   if (!page.url().includes('#rfpBuilderDistributionList')) {
-    throw new Error('Did not navigate to Distribution List after saving Medical Plan Details');
+    throw new Error('Did not navigate to Distribution List after saving Plan Details');
   }
 
   await page.getByText(/Who Gets the RFP\?/i).waitFor({ state: 'visible', timeout: 120000 });
@@ -638,6 +708,8 @@ async function selectMedicalFromDistributionListDropdown(page) {
 
   console.log('Verified Quotes tab is highlighted and URL ends with #gridInit/medical');
 
+  await verifyQuotesBenefitSubnavTabs(page, ['Vision', 'Dental']);
+
   const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-rfp-medical-quotes.png');
   await page.screenshot({ path: screenshotPath, fullPage: false });
   console.log(`Saved Medical Quotes screenshot: ${screenshotPath}`);
@@ -645,6 +717,7 @@ async function selectMedicalFromDistributionListDropdown(page) {
   return {
     quotesUrl: currentUrl,
     screenshotPath,
+    verifiedTabs: ['Vision', 'Dental'],
   };
 }
 
