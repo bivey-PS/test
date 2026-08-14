@@ -761,16 +761,34 @@ async function clickBackToEmployerProfile(page, employerName = 'Ace Testing') {
 }
 
 function buildEmployerDateRfpNamePrefix(employerName, date = new Date()) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Denver',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+
+  const year = parts.find((part) => part.type === 'year')?.value;
+  const month = parts.find((part) => part.type === 'month')?.value;
+  const day = parts.find((part) => part.type === 'day')?.value;
 
   return `${employerName} ${year}-${month}-${day}`;
 }
 
+function getEmployerDateRfpNamePrefixes(employerName, date = new Date()) {
+  const prefixes = [buildEmployerDateRfpNamePrefix(employerName, date)];
+  const yesterday = new Date(date);
+  yesterday.setDate(yesterday.getDate() - 1);
+  prefixes.push(buildEmployerDateRfpNamePrefix(employerName, yesterday));
+
+  return [...new Set(prefixes)];
+}
+
 async function verifyRequestForProposalsRfpRow(page, employerName = 'Ace Testing', date = new Date()) {
-  const expectedPrefix = buildEmployerDateRfpNamePrefix(employerName, date);
-  console.log(`Verifying Request for Proposals row matching: ${expectedPrefix}*`);
+  const expectedPrefixes = getEmployerDateRfpNamePrefixes(employerName, date);
+  console.log(
+    `Verifying Request for Proposals row matching: ${expectedPrefixes.map((prefix) => `${prefix}*`).join(' or ')}`,
+  );
 
   await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
   await waitForPageReady(page);
@@ -809,7 +827,9 @@ async function verifyRequestForProposalsRfpRow(page, employerName = 'Ace Testing
         .map((name) => name.trim())
         .filter(Boolean);
 
-      matchedName = rfpNames.find((name) => name.startsWith(expectedPrefix));
+      matchedName = rfpNames.find((name) =>
+        expectedPrefixes.some((prefix) => name.startsWith(prefix)),
+      );
       if (matchedName) {
         break;
       }
@@ -826,7 +846,7 @@ async function verifyRequestForProposalsRfpRow(page, employerName = 'Ace Testing
 
   if (!matchedName) {
     throw new Error(
-      `No Request for Proposals row found matching "${expectedPrefix}*". Found: ${rfpNames.slice(0, 5).join(' | ') || 'none'}`,
+      `No Request for Proposals row found matching "${expectedPrefixes.map((prefix) => `${prefix}*`).join('" or "')}". Found: ${rfpNames.slice(0, 5).join(' | ') || 'none'}`,
     );
   }
 
@@ -837,7 +857,8 @@ async function verifyRequestForProposalsRfpRow(page, employerName = 'Ace Testing
   console.log(`Saved Request for Proposals verification screenshot: ${screenshotPath}`);
 
   return {
-    expectedPrefix,
+    expectedPrefix: expectedPrefixes[0],
+    expectedPrefixes,
     matchedName,
     screenshotPath,
   };
@@ -1127,6 +1148,7 @@ module.exports = {
   clickBackToEmployerProfile,
   verifyRequestForProposalsRfpRow,
   buildEmployerDateRfpNamePrefix,
+  getEmployerDateRfpNamePrefixes,
   openShadybrookLumberRfp,
   openQuotesTab,
   openCancerTab,
