@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { evaluateRequestForProposalsRfpRowMatch } = require('./rfp-row-match');
 
 const OUTPUT_DIR = path.join(__dirname, '..', '..', 'automation-output');
 const AUTH_STATE_PATH = path.join(OUTPUT_DIR, 'auth-state.json');
@@ -775,20 +776,11 @@ function buildEmployerDateRfpNamePrefix(employerName, date = new Date()) {
   return `${employerName} ${year}-${month}-${day}`;
 }
 
-function getEmployerDateRfpNamePrefixes(employerName, date = new Date()) {
-  const prefixes = [buildEmployerDateRfpNamePrefix(employerName, date)];
-  const yesterday = new Date(date);
-  yesterday.setDate(yesterday.getDate() - 1);
-  prefixes.push(buildEmployerDateRfpNamePrefix(employerName, yesterday));
-
-  return [...new Set(prefixes)];
-}
-
 async function verifyRequestForProposalsRfpRow(page, employerName = 'Ace Testing', date = new Date()) {
-  const expectedPrefixes = getEmployerDateRfpNamePrefixes(employerName, date);
-  console.log(
-    `Verifying Request for Proposals row matching: ${expectedPrefixes.map((prefix) => `${prefix}*`).join(' or ')}`,
-  );
+  // Only today's America/Denver date. Including yesterday allowed a prior-day
+  // Minimum Gate RFP to satisfy S3.8 when today's row never appeared.
+  const expectedPrefix = buildEmployerDateRfpNamePrefix(employerName, date);
+  console.log(`Verifying Request for Proposals row matching: ${expectedPrefix}*`);
 
   await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
   await waitForPageReady(page);
@@ -796,6 +788,7 @@ async function verifyRequestForProposalsRfpRow(page, employerName = 'Ace Testing
 
   let matchedName = null;
   let rfpNames = [];
+  let matchResult = null;
 
   for (let attempt = 0; attempt < 5 && !matchedName; attempt += 1) {
     if (attempt > 0) {
@@ -827,9 +820,11 @@ async function verifyRequestForProposalsRfpRow(page, employerName = 'Ace Testing
         .map((name) => name.trim())
         .filter(Boolean);
 
-      matchedName = rfpNames.find((name) =>
-        expectedPrefixes.some((prefix) => name.startsWith(prefix)),
-      );
+      matchResult = evaluateRequestForProposalsRfpRowMatch({
+        rfpNames,
+        expectedPrefix,
+      });
+      matchedName = matchResult.matchedName;
       if (matchedName) {
         break;
       }
@@ -846,7 +841,8 @@ async function verifyRequestForProposalsRfpRow(page, employerName = 'Ace Testing
 
   if (!matchedName) {
     throw new Error(
-      `No Request for Proposals row found matching "${expectedPrefixes.map((prefix) => `${prefix}*`).join('" or "')}". Found: ${rfpNames.slice(0, 5).join(' | ') || 'none'}`,
+      matchResult?.failReason ||
+        `No Request for Proposals row found matching "${expectedPrefix}*". Found: ${rfpNames.slice(0, 5).join(' | ') || 'none'}`,
     );
   }
 
@@ -857,8 +853,8 @@ async function verifyRequestForProposalsRfpRow(page, employerName = 'Ace Testing
   console.log(`Saved Request for Proposals verification screenshot: ${screenshotPath}`);
 
   return {
-    expectedPrefix: expectedPrefixes[0],
-    expectedPrefixes,
+    expectedPrefix,
+    expectedPrefixes: [expectedPrefix],
     matchedName,
     screenshotPath,
   };
@@ -1148,7 +1144,6 @@ module.exports = {
   clickBackToEmployerProfile,
   verifyRequestForProposalsRfpRow,
   buildEmployerDateRfpNamePrefix,
-  getEmployerDateRfpNamePrefixes,
   openShadybrookLumberRfp,
   openQuotesTab,
   openCancerTab,
