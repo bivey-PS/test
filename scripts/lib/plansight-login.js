@@ -784,11 +784,31 @@ function getEmployerDateRfpNamePrefixes(employerName, date = new Date()) {
   return [...new Set(prefixes)];
 }
 
-async function verifyRequestForProposalsRfpRow(page, employerName = 'Ace Testing', date = new Date()) {
+function extractRfpIdFromUrl(url) {
+  const match = url.match(/\/group\/[^/]+\/([^/#?]+)/);
+  if (!match || match[1] === 'none') {
+    return null;
+  }
+
+  return match[1];
+}
+
+async function verifyRequestForProposalsRfpRow(
+  page,
+  employerName = 'Ace Testing',
+  date = new Date(),
+  rfpId = null,
+) {
   const expectedPrefixes = getEmployerDateRfpNamePrefixes(employerName, date);
-  console.log(
-    `Verifying Request for Proposals row matching: ${expectedPrefixes.map((prefix) => `${prefix}*`).join(' or ')}`,
-  );
+  if (rfpId) {
+    console.log(
+      `Verifying Request for Proposals row for RFP ${rfpId} and name matching: ${expectedPrefixes.map((prefix) => `${prefix}*`).join(' or ')}`,
+    );
+  } else {
+    console.log(
+      `Verifying Request for Proposals row matching: ${expectedPrefixes.map((prefix) => `${prefix}*`).join(' or ')}`,
+    );
+  }
 
   await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
   await waitForPageReady(page);
@@ -823,13 +843,47 @@ async function verifyRequestForProposalsRfpRow(page, employerName = 'Ace Testing
     const maxPages = 10;
 
     for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {
+      if (rfpId) {
+        matchedName = await rfpTable.evaluate(
+          (table, { currentRfpId, currentEmployerName, prefixes }) => {
+            for (const row of table.querySelectorAll('tbody tr')) {
+              const name = row.querySelector('.name')?.textContent?.trim() || '';
+              const rowLinksRfp = [...row.querySelectorAll('a')].some((anchor) =>
+                anchor.href.includes(`/${currentRfpId}`),
+              );
+
+              if (
+                rowLinksRfp &&
+                name.startsWith(currentEmployerName) &&
+                prefixes.some((prefix) => name.startsWith(prefix))
+              ) {
+                return name;
+              }
+
+              if (rowLinksRfp && name.startsWith(currentEmployerName)) {
+                return name;
+              }
+            }
+
+            return null;
+          },
+          { currentRfpId: rfpId, currentEmployerName: employerName, prefixes: expectedPrefixes },
+        );
+
+        if (matchedName) {
+          break;
+        }
+      }
+
       rfpNames = (await rfpTable.locator('tbody tr .name').allTextContents())
         .map((name) => name.trim())
         .filter(Boolean);
 
-      matchedName = rfpNames.find((name) =>
-        expectedPrefixes.some((prefix) => name.startsWith(prefix)),
-      );
+      if (!matchedName) {
+        matchedName = rfpNames.find((name) =>
+          expectedPrefixes.some((prefix) => name.startsWith(prefix)),
+        );
+      }
       if (matchedName) {
         break;
       }
@@ -860,6 +914,7 @@ async function verifyRequestForProposalsRfpRow(page, employerName = 'Ace Testing
     expectedPrefix: expectedPrefixes[0],
     expectedPrefixes,
     matchedName,
+    rfpId,
     screenshotPath,
   };
 }
@@ -1149,6 +1204,7 @@ module.exports = {
   verifyRequestForProposalsRfpRow,
   buildEmployerDateRfpNamePrefix,
   getEmployerDateRfpNamePrefixes,
+  extractRfpIdFromUrl,
   openShadybrookLumberRfp,
   openQuotesTab,
   openCancerTab,

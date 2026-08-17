@@ -15,6 +15,8 @@ const {
   isLoggedIn,
 } = require('../lib/plansight-login');
 
+let currentRfpId = null;
+
 const SCENARIOS = [
   {
     id: 'S1.2',
@@ -116,9 +118,12 @@ async function runS22(page, _context, options) {
 
 async function runS31(page) {
   const wizard = await startNewRfpBasicsTab(page);
+  const { extractRfpIdFromUrl } = require('../lib/plansight-login');
+  currentRfpId = extractRfpIdFromUrl(wizard.wizardUrl);
 
   return {
     wizardUrl: wizard.wizardUrl,
+    rfpId: currentRfpId,
     screenshotPath: wizard.screenshotPath,
   };
 }
@@ -189,11 +194,17 @@ async function runS37(page, _context, options) {
 }
 
 async function runS38(page, _context, options) {
-  const rfpRow = await verifyRequestForProposalsRfpRow(page, options.employerName);
+  const rfpRow = await verifyRequestForProposalsRfpRow(
+    page,
+    options.employerName,
+    new Date(),
+    currentRfpId,
+  );
 
   return {
     expectedPrefix: rfpRow.expectedPrefix,
     matchedName: rfpRow.matchedName,
+    rfpId: rfpRow.rfpId,
     screenshotPath: rfpRow.screenshotPath,
   };
 }
