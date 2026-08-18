@@ -2,8 +2,10 @@ import { test, expect } from '@playwright/test';
 
 const BASE_URL = process.env.BASE_URL || 'https://test.plansight.com';
 const LOGIN_USERNAME =
-  process.env.LOGIN_USERNAME || process.env.LOGIN_EMAIL || 'b.ivey@plansight.com';
-const LOGIN_PASSWORD = process.env.LOGIN_PASSWORD;
+  process.env.LOGIN_USERNAME ||
+  process.env.LOGIN_EMAIL ||
+  'ps.automation.broker.ca.admin@plansight.com';
+const LOGIN_PASSWORD = process.env.LOGIN_PASSWORD || 'AutomationUser123';
 const MFA_CODE = process.env.MFA_CODE;
 const EMPLOYER_NAME = process.env.EMPLOYER_NAME || 'Ace Testing';
 

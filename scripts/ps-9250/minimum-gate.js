@@ -4,12 +4,7 @@ const path = require('path');
 const config = require('./config');
 const { SCENARIOS } = require('./scenarios');
 const { buildScenarioResult, writeReport } = require('./report');
-const {
-  getAuthStatePathForBaseUrl,
-  authStateMatchesBaseUrl,
-  saveAuthState,
-  saveRecording,
-} = require('../lib/plansight-login');
+const { authStateMatchesBaseUrl, saveAuthState, saveRecording } = require('../lib/plansight-login');
 const { requireLoginPassword } = require('../lib/plansight-credentials');
 
 const RECORD_VIDEO = process.env.RECORD_VIDEO === '1';
@@ -36,7 +31,7 @@ function requireCredentials() {
       username: config.loginUsername,
       password: config.loginPassword,
     },
-    'LOGIN_PASSWORD=yourpassword npm run automate:ps9250:minimum-gate',
+    'npm run automate:ps9250:minimum-gate',
   );
 }
 
@@ -44,7 +39,7 @@ async function runMinimumGate() {
   requireCredentials();
   fs.mkdirSync(config.outputDir, { recursive: true });
 
-  const authStatePath = getAuthStatePathForBaseUrl(config.baseUrl);
+  const authStatePath = config.authStatePath;
   const browser = await chromium.launch({
     headless: process.env.HEADED !== '1' && !RECORD_VIDEO,
     slowMo: process.env.HEADED === '1' || RECORD_VIDEO ? 400 : 0,

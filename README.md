@@ -51,15 +51,13 @@ RECORD_VIDEO=1 LOGIN_USERNAME=... LOGIN_PASSWORD=... MFA_CODE=... npm run automa
 npm run automate:login:ui
 
 # PS-9250 Minimum Gate smoke automation (S1.2, S2.1, S2.2, S3.1)
-LOGIN_PASSWORD=yourpassword MFA_CODE=123456 npm run automate:ps9250:minimum-gate
+MFA_CODE=123456 npm run automate:ps9250:minimum-gate
 ```
 
-Defaults to broker user `b.ivey@plansight.com` (same as PS-8910 login automation). Override with `LOGIN_USERNAME` if needed.
-
-PS-9250 defaults to `BASE_URL=https://test.plansight.com`. Override if needed:
+PS-9250 defaults to broker user `ps.automation.broker.ca.admin@plansight.com` on `BASE_URL=https://test.plansight.com`. Credentials are built into the PS-9250 config; override with `LOGIN_USERNAME` / `LOGIN_PASSWORD` if needed. Provide `MFA_CODE` on first login or when the saved session expires.
 
 ```bash
-BASE_URL=https://test.plansight.com EMPLOYER_NAME="Ace Testing" LOGIN_PASSWORD=yourpassword MFA_CODE=123456 npm run automate:ps9250:minimum-gate
+BASE_URL=https://test.plansight.com EMPLOYER_NAME="Ace Testing" MFA_CODE=123456 npm run automate:ps9250:minimum-gate
 ```
 
 The PS-9250 Minimum Gate suite verifies:
