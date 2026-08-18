@@ -919,6 +919,63 @@ async function verifyRequestForProposalsRfpRow(
   };
 }
 
+async function openRfpFromMarketingTableByName(
+  page,
+  { matchedName, rfpId = null, employerName = 'Ace Testing' } = {},
+) {
+  if (!matchedName && !rfpId) {
+    throw new Error('openRfpFromMarketingTableByName requires matchedName or rfpId');
+  }
+
+  console.log(
+    `Clicking Name link to open RFP: ${matchedName || employerName}${rfpId ? ` (${rfpId})` : ''}`,
+  );
+
+  const rfpTable = page.locator('#pending-active-pastDue-rfp-table').first();
+  await rfpTable.scrollIntoViewIfNeeded();
+  await rfpTable.waitFor({ timeout: 30000 });
+
+  let nameLink;
+  if (rfpId) {
+    nameLink = rfpTable.locator(`tbody tr a[href*="/${rfpId}"]`).first();
+  } else {
+    nameLink = rfpTable
+      .locator('tbody tr')
+      .filter({ has: page.locator('.name', { hasText: matchedName }) })
+      .locator('a')
+      .first();
+  }
+
+  await nameLink.waitFor({ timeout: 30000 });
+  await nameLink.scrollIntoViewIfNeeded();
+
+  const linkText = (await nameLink.locator('.name').textContent())?.trim() || matchedName;
+  await nameLink.evaluate((element) => element.click());
+
+  if (rfpId) {
+    const escapedRfpId = rfpId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    await page.waitForURL(new RegExp(escapedRfpId), { timeout: 60000 });
+  }
+
+  await waitForPageReady(page);
+
+  if (linkText) {
+    await page.getByText(linkText, { exact: false }).first().waitFor({ timeout: 30000 });
+  }
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-rfp-opened-from-name.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Opened RFP from Name link: ${linkText || matchedName}`);
+  console.log(`Saved opened RFP screenshot: ${screenshotPath}`);
+
+  return {
+    rfpUrl: page.url(),
+    matchedName: linkText || matchedName,
+    rfpId,
+    screenshotPath,
+  };
+}
+
 async function openShadybrookLumberRfp(page) {
   console.log('Waiting for Request for Proposals section to load');
 
@@ -1202,6 +1259,7 @@ module.exports = {
   selectMedicalFromDistributionListDropdown,
   clickBackToEmployerProfile,
   verifyRequestForProposalsRfpRow,
+  openRfpFromMarketingTableByName,
   buildEmployerDateRfpNamePrefix,
   getEmployerDateRfpNamePrefixes,
   extractRfpIdFromUrl,

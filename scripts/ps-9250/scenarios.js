@@ -12,10 +12,12 @@ const {
   selectMedicalFromDistributionListDropdown,
   clickBackToEmployerProfile,
   verifyRequestForProposalsRfpRow,
+  openRfpFromMarketingTableByName,
   isLoggedIn,
 } = require('../lib/plansight-login');
 
 let currentRfpId = null;
+let currentMatchedRfpName = null;
 
 const SCENARIOS = [
   {
@@ -77,6 +79,11 @@ const SCENARIOS = [
     id: 'S3.8',
     name: 'Request for Proposals → row for Ace Testing {current date}*',
     run: runS38,
+  },
+  {
+    id: 'S3.9',
+    name: 'Request for Proposals → click Name link to open RFP',
+    run: runS39,
   },
 ];
 
@@ -200,12 +207,27 @@ async function runS38(page, _context, options) {
     new Date(),
     currentRfpId,
   );
+  currentMatchedRfpName = rfpRow.matchedName;
 
   return {
     expectedPrefix: rfpRow.expectedPrefix,
     matchedName: rfpRow.matchedName,
     rfpId: rfpRow.rfpId,
     screenshotPath: rfpRow.screenshotPath,
+  };
+}
+
+async function runS39(page) {
+  const opened = await openRfpFromMarketingTableByName(page, {
+    matchedName: currentMatchedRfpName,
+    rfpId: currentRfpId,
+  });
+
+  return {
+    matchedName: opened.matchedName,
+    rfpId: opened.rfpId,
+    rfpUrl: opened.rfpUrl,
+    screenshotPath: opened.screenshotPath,
   };
 }
 
