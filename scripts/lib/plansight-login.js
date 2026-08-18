@@ -954,13 +954,29 @@ async function openRfpFromMarketingTableByName(
 
   if (rfpId) {
     const escapedRfpId = rfpId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    await page.waitForURL(new RegExp(escapedRfpId), { timeout: 60000 });
+    await page.waitForURL(new RegExp(`${escapedRfpId}.*#`), { timeout: 60000 });
   }
 
+  await page.waitForURL(/#rfpBuilderBasics|#marketResponse|#gridInit/, { timeout: 60000 });
   await waitForPageReady(page);
 
-  if (linkText) {
-    await page.getByText(linkText, { exact: false }).first().waitFor({ timeout: 30000 });
+  const loading = page.getByText('Loading...');
+  if ((await loading.count()) > 0) {
+    await loading.first().waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
+  }
+
+  const rfpOpened =
+    page.url().includes('#rfpBuilderBasics') ||
+    page.url().includes('#marketResponse') ||
+    page.url().includes('#gridInit');
+
+  if (!rfpOpened) {
+    throw new Error(`RFP did not open after clicking Name link. Current URL: ${page.url()}`);
+  }
+
+  if (page.url().includes('#rfpBuilderBasics')) {
+    const basicsLabel = page.locator('label').filter({ hasText: /RFP Name/i }).first();
+    await basicsLabel.waitFor({ state: 'visible', timeout: 30000 });
   }
 
   const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-rfp-opened-from-name.png');
