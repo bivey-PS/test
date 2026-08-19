@@ -1,5 +1,10 @@
 const fs = require('fs');
 const path = require('path');
+const {
+  extractRfpIdFromUrl,
+  hrefMatchesRfpId,
+  evaluateRequestForProposalsRfpRowMatch,
+} = require('./rfp-row-match');
 
 const OUTPUT_DIR = path.join(__dirname, '..', '..', 'automation-output');
 const AUTH_STATE_PATH = path.join(OUTPUT_DIR, 'auth-state.json');
@@ -776,21 +781,9 @@ function buildEmployerDateRfpNamePrefix(employerName, date = new Date()) {
 }
 
 function getEmployerDateRfpNamePrefixes(employerName, date = new Date()) {
-  const prefixes = [buildEmployerDateRfpNamePrefix(employerName, date)];
-  const yesterday = new Date(date);
-  yesterday.setDate(yesterday.getDate() - 1);
-  prefixes.push(buildEmployerDateRfpNamePrefix(employerName, yesterday));
-
-  return [...new Set(prefixes)];
-}
-
-function extractRfpIdFromUrl(url) {
-  const match = url.match(/\/group\/[^/]+\/([^/#?]+)/);
-  if (!match || match[1] === 'none') {
-    return null;
-  }
-
-  return match[1];
+  // Today only. Including yesterday allowed a prior-day Minimum Gate RFP to
+  // satisfy S3.8 when today's row never appeared (or when rfpId was still null).
+  return [buildEmployerDateRfpNamePrefix(employerName, date)];
 }
 
 async function verifyRequestForProposalsRfpRow(
@@ -799,15 +792,14 @@ async function verifyRequestForProposalsRfpRow(
   date = new Date(),
   rfpId = null,
 ) {
-  const expectedPrefixes = getEmployerDateRfpNamePrefixes(employerName, date);
+  // Name fallback is today-only. When rfpId is known, only that id may match —
+  // never fall back to a same-employer dated row that belongs to another run.
+  const expectedPrefix = buildEmployerDateRfpNamePrefix(employerName, date);
+  const expectedPrefixes = [expectedPrefix];
   if (rfpId) {
-    console.log(
-      `Verifying Request for Proposals row for RFP ${rfpId} and name matching: ${expectedPrefixes.map((prefix) => `${prefix}*`).join(' or ')}`,
-    );
+    console.log(`Verifying Request for Proposals row for RFP ${rfpId}`);
   } else {
-    console.log(
-      `Verifying Request for Proposals row matching: ${expectedPrefixes.map((prefix) => `${prefix}*`).join(' or ')}`,
-    );
+    console.log(`Verifying Request for Proposals row matching: ${expectedPrefix}*`);
   }
 
   await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
@@ -816,6 +808,7 @@ async function verifyRequestForProposalsRfpRow(
 
   let matchedName = null;
   let rfpNames = [];
+  let matchResult = null;
 
   for (let attempt = 0; attempt < 5 && !matchedName; attempt += 1) {
     if (attempt > 0) {
@@ -843,47 +836,37 @@ async function verifyRequestForProposalsRfpRow(
     const maxPages = 10;
 
     for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {
-      if (rfpId) {
-        matchedName = await rfpTable.evaluate(
-          (table, { currentRfpId, currentEmployerName, prefixes }) => {
-            for (const row of table.querySelectorAll('tbody tr')) {
-              const name = row.querySelector('.name')?.textContent?.trim() || '';
-              const rowLinksRfp = [...row.querySelectorAll('a')].some((anchor) =>
-                anchor.href.includes(`/${currentRfpId}`),
-              );
+      const rowData = await rfpTable.evaluate((table) => {
+        const names = [];
+        const hrefByName = {};
 
-              if (
-                rowLinksRfp &&
-                name.startsWith(currentEmployerName) &&
-                prefixes.some((prefix) => name.startsWith(prefix))
-              ) {
-                return name;
-              }
+        for (const row of table.querySelectorAll('tbody tr')) {
+          const name = row.querySelector('.name')?.textContent?.trim() || '';
+          if (!name) {
+            continue;
+          }
 
-              if (rowLinksRfp && name.startsWith(currentEmployerName)) {
-                return name;
-              }
-            }
-
-            return null;
-          },
-          { currentRfpId: rfpId, currentEmployerName: employerName, prefixes: expectedPrefixes },
-        );
-
-        if (matchedName) {
-          break;
+          names.push(name);
+          const href =
+            [...row.querySelectorAll('a')]
+              .map((anchor) => anchor.href)
+              .find((value) => value && value.includes('/group/')) ||
+            row.querySelector('a')?.href ||
+            '';
+          hrefByName[name] = href;
         }
-      }
 
-      rfpNames = (await rfpTable.locator('tbody tr .name').allTextContents())
-        .map((name) => name.trim())
-        .filter(Boolean);
+        return { names, hrefByName };
+      });
 
-      if (!matchedName) {
-        matchedName = rfpNames.find((name) =>
-          expectedPrefixes.some((prefix) => name.startsWith(prefix)),
-        );
-      }
+      rfpNames = rowData.names;
+      matchResult = evaluateRequestForProposalsRfpRowMatch({
+        rfpNames: rowData.names,
+        expectedPrefix,
+        rfpId,
+        rowHrefByName: rowData.hrefByName,
+      });
+      matchedName = matchResult.matchedName;
       if (matchedName) {
         break;
       }
@@ -900,7 +883,8 @@ async function verifyRequestForProposalsRfpRow(
 
   if (!matchedName) {
     throw new Error(
-      `No Request for Proposals row found matching "${expectedPrefixes.map((prefix) => `${prefix}*`).join('" or "')}". Found: ${rfpNames.slice(0, 5).join(' | ') || 'none'}`,
+      matchResult?.failReason ||
+        `No Request for Proposals row found matching "${expectedPrefix}*". Found: ${rfpNames.slice(0, 5).join(' | ') || 'none'}`,
     );
   }
 
@@ -911,7 +895,7 @@ async function verifyRequestForProposalsRfpRow(
   console.log(`Saved Request for Proposals verification screenshot: ${screenshotPath}`);
 
   return {
-    expectedPrefix: expectedPrefixes[0],
+    expectedPrefix,
     expectedPrefixes,
     matchedName,
     rfpId,
@@ -937,7 +921,49 @@ async function openRfpFromMarketingTableByName(
 
   let nameLink;
   if (rfpId) {
-    nameLink = rfpTable.locator(`tbody tr a[href*="/${rfpId}"]`).first();
+    const tableWrapper = rfpTable.locator(
+      'xpath=ancestor::div[contains(@class,"dataTables_wrapper")]',
+    );
+    const maxPages = 10;
+    let found = false;
+
+    for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {
+      const rowCount = await rfpTable.locator('tbody tr').count();
+      for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+        const row = rfpTable.locator('tbody tr').nth(rowIndex);
+        const anchors = row.locator('a');
+        const anchorCount = await anchors.count();
+        for (let anchorIndex = 0; anchorIndex < anchorCount; anchorIndex += 1) {
+          const anchor = anchors.nth(anchorIndex);
+          const href = (await anchor.getAttribute('href')) || '';
+          if (hrefMatchesRfpId(href, rfpId)) {
+            nameLink = anchor;
+            found = true;
+            break;
+          }
+        }
+        if (found) {
+          break;
+        }
+      }
+
+      if (found) {
+        break;
+      }
+
+      const nextPage = tableWrapper
+        .locator('.paginate_button.next:not(.disabled), .next:not(.disabled)')
+        .first();
+      if ((await nextPage.count()) === 0) {
+        break;
+      }
+      await nextPage.click();
+      await page.waitForTimeout(1000);
+    }
+
+    if (!found) {
+      throw new Error(`No Request for Proposals Name link found for RFP id "${rfpId}"`);
+    }
   } else {
     nameLink = rfpTable
       .locator('tbody tr')
@@ -953,8 +979,9 @@ async function openRfpFromMarketingTableByName(
   await nameLink.evaluate((element) => element.click());
 
   if (rfpId) {
-    const escapedRfpId = rfpId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    await page.waitForURL(new RegExp(`${escapedRfpId}.*#`), { timeout: 60000 });
+    await page.waitForURL(new RegExp(`/${escapeRegExp(rfpId)}(?:[#/?]|$)`), {
+      timeout: 60000,
+    });
   }
 
   await page.waitForURL(/#rfpBuilderBasics|#marketResponse|#gridInit/, { timeout: 60000 });

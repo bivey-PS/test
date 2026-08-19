@@ -13,11 +13,22 @@ const {
   clickBackToEmployerProfile,
   verifyRequestForProposalsRfpRow,
   openRfpFromMarketingTableByName,
+  extractRfpIdFromUrl,
   isLoggedIn,
 } = require('../lib/plansight-login');
 
 let currentRfpId = null;
 let currentMatchedRfpName = null;
+
+function trackRfpIdFromUrl(url) {
+  const nextId = extractRfpIdFromUrl(url);
+  // Wizard starts at "/none" until the first save assigns an id. Keep the last
+  // real id once we have one; never overwrite a real id with null.
+  if (nextId) {
+    currentRfpId = nextId;
+  }
+  return currentRfpId;
+}
 
 const SCENARIOS = [
   {
@@ -125,8 +136,7 @@ async function runS22(page, _context, options) {
 
 async function runS31(page) {
   const wizard = await startNewRfpBasicsTab(page);
-  const { extractRfpIdFromUrl } = require('../lib/plansight-login');
-  currentRfpId = extractRfpIdFromUrl(wizard.wizardUrl);
+  trackRfpIdFromUrl(wizard.wizardUrl);
 
   return {
     wizardUrl: wizard.wizardUrl,
@@ -137,45 +147,56 @@ async function runS31(page) {
 
 async function runS32(page) {
   const wizard = await saveRfpBasicsAndContinue(page);
+  // First Save & Continue is when /none becomes a real rfpId.
+  trackRfpIdFromUrl(wizard.wizardUrl);
 
   return {
     wizardUrl: wizard.wizardUrl,
+    rfpId: currentRfpId,
     screenshotPath: wizard.screenshotPath,
   };
 }
 
 async function runS33(page) {
   const wizard = await saveBenefitTypesAndContinue(page);
+  trackRfpIdFromUrl(wizard.wizardUrl);
 
   return {
     wizardUrl: wizard.wizardUrl,
+    rfpId: currentRfpId,
     screenshotPath: wizard.screenshotPath,
   };
 }
 
 async function runS331(page) {
   const wizard = await saveCommunityRatedPlansAndContinue(page);
+  trackRfpIdFromUrl(wizard.wizardUrl);
 
   return {
     wizardUrl: wizard.wizardUrl,
+    rfpId: currentRfpId,
     screenshotPath: wizard.screenshotPath,
   };
 }
 
 async function runS34(page) {
   const wizard = await saveDocumentsForCarrierQuotingAndContinue(page);
+  trackRfpIdFromUrl(wizard.wizardUrl);
 
   return {
     wizardUrl: wizard.wizardUrl,
+    rfpId: currentRfpId,
     screenshotPath: wizard.screenshotPath,
   };
 }
 
 async function runS35(page) {
   const wizard = await saveMedicalPlanDetailsAndContinue(page);
+  trackRfpIdFromUrl(wizard.wizardUrl);
 
   return {
     wizardUrl: wizard.wizardUrl,
+    rfpId: currentRfpId,
     screenshotPath: wizard.screenshotPath,
   };
 }
