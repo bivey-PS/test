@@ -15,6 +15,7 @@ const {
   openRfpFromMarketingTableByName,
   selectMedicalFromRfpBasicsEllipsis,
   clickAddQuoteButton,
+  selectCarrierInCreateNewQuoteModal,
   isLoggedIn,
 } = require('../lib/plansight-login');
 
@@ -96,6 +97,11 @@ const SCENARIOS = [
     id: 'S3.11',
     name: 'Medical Quotes → click Add Quote + button',
     run: runS311,
+  },
+  {
+    id: 'S3.12',
+    name: 'Create New Quote → Carrier dropdown → type "a" → Enter',
+    run: runS312,
   },
 ];
 
@@ -258,6 +264,16 @@ async function runS311(page) {
   return {
     quotesUrl: addQuote.quotesUrl,
     screenshotPath: addQuote.screenshotPath,
+  };
+}
+
+async function runS312(page) {
+  const carrier = await selectCarrierInCreateNewQuoteModal(page, 'a');
+
+  return {
+    carrierId: carrier.carrierId,
+    carrierName: carrier.carrierName,
+    screenshotPath: carrier.screenshotPath,
   };
 }
 

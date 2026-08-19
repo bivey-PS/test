@@ -76,6 +76,7 @@ The PS-9250 Minimum Gate suite verifies:
 - **S3.9** Request for Proposals → click **Name** link to open the RFP
 - **S3.10** RFP Basics → vertical ellipsis menu → **Medical** row
 - **S3.11** Medical Quotes → click **Add Quote +** button
+- **S3.12** Create New Quote → **Carrier** dropdown → type `a` → Enter
 
 Reports are written to:
 - `automation-output/ps-9250-minimum-gate-report.json`

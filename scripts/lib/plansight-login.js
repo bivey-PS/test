@@ -795,6 +795,66 @@ async function clickAddQuoteButton(page) {
   };
 }
 
+async function getCreateNewQuoteDialog(page) {
+  const dialog = page.locator('.bootbox.modal.in').filter({ hasText: /Create New Quote/i });
+  await dialog.waitFor({ state: 'visible', timeout: 30000 });
+  return dialog;
+}
+
+async function selectCarrierInCreateNewQuoteModal(page, searchText = 'a') {
+  console.log(`Selecting Carrier in Create New Quote modal with search: "${searchText}"`);
+
+  const dialog = await getCreateNewQuoteDialog(page);
+  await dialog.locator('label[for="carrierId"]').waitFor({ state: 'visible', timeout: 30000 });
+  await page.waitForFunction(
+    () => document.querySelector('#carrierId')?.classList.contains('select2-hidden-accessible'),
+    { timeout: 30000 },
+  );
+
+  const carrierDropdown = dialog.locator('.carrier-input .select2-selection');
+  await carrierDropdown.waitFor({ state: 'attached', timeout: 30000 });
+  await carrierDropdown.evaluate((element) => element.click());
+
+  let searchField = page.locator('.select2-container--open input.select2-search__field');
+  if ((await searchField.count()) === 0) {
+    await page.evaluate(() => {
+      const select = window.jQuery?.('#carrierId');
+      if (select?.data('select2')) {
+        select.select2('open');
+      }
+    });
+  }
+
+  searchField = page.locator('.select2-container--open input.select2-search__field');
+  await searchField.waitFor({ state: 'visible', timeout: 10000 });
+  await searchField.fill(searchText);
+  await page.locator('.select2-results__option--highlighted').waitFor({ state: 'visible', timeout: 30000 });
+  await page.keyboard.press('Enter');
+
+  await page.waitForFunction(() => {
+    const carrierId = document.querySelector('#carrierId')?.value;
+    const carrierName = document.querySelector('#select2-carrierId-container')?.textContent?.trim();
+    return Boolean(carrierId && carrierName);
+  });
+
+  const selectedCarrier = await page.evaluate(() => ({
+    carrierId: document.querySelector('#carrierId')?.value,
+    carrierName: document.querySelector('#select2-carrierId-container')?.textContent?.trim(),
+  }));
+
+  console.log(`Selected carrier: ${selectedCarrier.carrierName}`);
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-create-quote-carrier-selected.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved Create New Quote carrier screenshot: ${screenshotPath}`);
+
+  return {
+    carrierId: selectedCarrier.carrierId,
+    carrierName: selectedCarrier.carrierName,
+    screenshotPath,
+  };
+}
+
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -1344,6 +1404,7 @@ module.exports = {
   selectMedicalFromDistributionListDropdown,
   selectMedicalFromRfpBasicsEllipsis,
   clickAddQuoteButton,
+  selectCarrierInCreateNewQuoteModal,
   clickBackToEmployerProfile,
   verifyRequestForProposalsRfpRow,
   openRfpFromMarketingTableByName,
