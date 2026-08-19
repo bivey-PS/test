@@ -906,6 +906,39 @@ async function uploadQuoteDocumentInCreateNewQuoteModal(
   };
 }
 
+async function submitCreateNewQuoteModal(page) {
+  console.log('Clicking Create New Quote button');
+
+  const dialog = await getCreateNewQuoteDialog(page);
+  const createButton = dialog.getByRole('button', { name: 'Create New Quote', exact: true });
+  await createButton.waitFor({ state: 'visible', timeout: 30000 });
+  await createButton.scrollIntoViewIfNeeded();
+  await createButton.click();
+
+  await page.waitForURL(/#planGroupQuoteCreate\/medical/, { timeout: 60000 });
+  await waitForPageReady(page);
+  await page.getByText('Loading...').waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
+
+  await page.getByText('Quote - Medical', { exact: true }).first().waitFor({ state: 'visible', timeout: 60000 });
+  await page.getByRole('button', { name: /Save Changes/i }).waitFor({ state: 'visible', timeout: 60000 });
+
+  const quoteUrl = page.url();
+  if (!quoteUrl.includes('#planGroupQuoteCreate/medical')) {
+    throw new Error(`Expected quote create URL after submitting modal, got: ${quoteUrl}`);
+  }
+
+  console.log(`Opened quote create view: ${quoteUrl}`);
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-quote-create-submitted.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved Create New Quote submit screenshot: ${screenshotPath}`);
+
+  return {
+    quoteUrl,
+    screenshotPath,
+  };
+}
+
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -1457,6 +1490,7 @@ module.exports = {
   clickAddQuoteButton,
   selectCarrierInCreateNewQuoteModal,
   uploadQuoteDocumentInCreateNewQuoteModal,
+  submitCreateNewQuoteModal,
   clickBackToEmployerProfile,
   verifyRequestForProposalsRfpRow,
   openRfpFromMarketingTableByName,

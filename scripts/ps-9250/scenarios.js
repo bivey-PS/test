@@ -17,6 +17,7 @@ const {
   clickAddQuoteButton,
   selectCarrierInCreateNewQuoteModal,
   uploadQuoteDocumentInCreateNewQuoteModal,
+  submitCreateNewQuoteModal,
   isLoggedIn,
 } = require('../lib/plansight-login');
 
@@ -108,6 +109,11 @@ const SCENARIOS = [
     id: 'S3.13',
     name: 'Create New Quote → Click to upload → select doc - sbc silver 5000 Valuecare',
     run: runS313,
+  },
+  {
+    id: 'S3.14',
+    name: 'Create New Quote → click Create New Quote button',
+    run: runS314,
   },
 ];
 
@@ -290,6 +296,15 @@ async function runS313(page) {
     fileName: upload.fileName,
     fixturePath: upload.fixturePath,
     screenshotPath: upload.screenshotPath,
+  };
+}
+
+async function runS314(page) {
+  const quote = await submitCreateNewQuoteModal(page);
+
+  return {
+    quoteUrl: quote.quoteUrl,
+    screenshotPath: quote.screenshotPath,
   };
 }
 
