@@ -656,38 +656,7 @@ async function selectMedicalFromDistributionListDropdown(page) {
   await page.getByText('Loading...').waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
   await waitForPageReady(page);
 
-  const selected = await page.evaluate(() => {
-    const icons = [...document.querySelectorAll('[data-icon="ellipsis-vertical"]')];
-
-    for (const icon of icons) {
-      const toggle = icon.closest('a, button');
-      if (!toggle) {
-        continue;
-      }
-
-      toggle.click();
-
-      const openMenu = document.querySelector('.dropdown-menu.show, .dropdown.open .dropdown-menu');
-      if (!openMenu) {
-        continue;
-      }
-
-      const medicalLink = [...openMenu.querySelectorAll('a')].find(
-        (anchor) =>
-          (anchor.textContent || '').trim() === 'Medical' &&
-          anchor.href.includes('gridInit/medical'),
-      );
-
-      if (medicalLink) {
-        medicalLink.click();
-        return true;
-      }
-
-      toggle.click();
-    }
-
-    return false;
-  });
+  const selected = await clickMedicalFromEllipsisMenu(page);
 
   if (!selected) {
     throw new Error('Could not select Medical from the Distribution List ellipsis menu');
@@ -723,6 +692,75 @@ async function selectMedicalFromDistributionListDropdown(page) {
     quotesUrl: currentUrl,
     screenshotPath,
     verifiedTabs: ['Vision', 'Dental'],
+  };
+}
+
+async function clickMedicalFromEllipsisMenu(page) {
+  return page.evaluate(() => {
+    const icons = [...document.querySelectorAll('[data-icon="ellipsis-vertical"]')];
+
+    for (const icon of icons) {
+      const toggle = icon.closest('a, button');
+      if (!toggle) {
+        continue;
+      }
+
+      toggle.click();
+
+      const openMenu = document.querySelector('.dropdown-menu.show, .dropdown.open .dropdown-menu');
+      if (!openMenu) {
+        continue;
+      }
+
+      const medicalLink = [...openMenu.querySelectorAll('a')].find((anchor) => {
+        const text = (anchor.textContent || '').trim();
+        return text === 'Medical' || (text.includes('Medical') && /medical/i.test(anchor.href));
+      });
+
+      if (medicalLink) {
+        medicalLink.click();
+        return true;
+      }
+
+      toggle.click();
+    }
+
+    return false;
+  });
+}
+
+async function selectMedicalFromRfpBasicsEllipsis(page) {
+  console.log('Opening ellipsis menu on RFP Basics and selecting Medical');
+
+  if (!page.url().includes('#rfpBuilderBasics')) {
+    throw new Error('Expected to be on RFP Basics wizard step');
+  }
+
+  await waitForPageReady(page);
+  await page.locator('label').filter({ hasText: /RFP Name/i }).first().waitFor({ state: 'visible', timeout: 30000 });
+  await page.getByText('Loading...').waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
+
+  const selected = await clickMedicalFromEllipsisMenu(page);
+
+  if (!selected) {
+    throw new Error('Could not select Medical from the RFP Basics ellipsis menu');
+  }
+
+  await page.waitForURL(/#gridInit\/medical|planType=medical|rfpBuilderPlanDetails.*medical/i, {
+    timeout: 60000,
+  });
+  await waitForPageReady(page);
+
+  const currentUrl = page.url();
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-rfp-basics-medical-selected.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Selected Medical from RFP Basics ellipsis menu`);
+  console.log(`Current URL: ${currentUrl}`);
+  console.log(`Saved RFP Basics Medical screenshot: ${screenshotPath}`);
+
+  return {
+    medicalUrl: currentUrl,
+    screenshotPath,
   };
 }
 
@@ -1273,6 +1311,7 @@ module.exports = {
   saveDocumentsForCarrierQuotingAndContinue,
   saveMedicalPlanDetailsAndContinue,
   selectMedicalFromDistributionListDropdown,
+  selectMedicalFromRfpBasicsEllipsis,
   clickBackToEmployerProfile,
   verifyRequestForProposalsRfpRow,
   openRfpFromMarketingTableByName,

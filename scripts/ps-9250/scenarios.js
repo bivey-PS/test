@@ -13,6 +13,7 @@ const {
   clickBackToEmployerProfile,
   verifyRequestForProposalsRfpRow,
   openRfpFromMarketingTableByName,
+  selectMedicalFromRfpBasicsEllipsis,
   isLoggedIn,
 } = require('../lib/plansight-login');
 
@@ -84,6 +85,11 @@ const SCENARIOS = [
     id: 'S3.9',
     name: 'Request for Proposals → click Name link to open RFP',
     run: runS39,
+  },
+  {
+    id: 'S3.10',
+    name: 'RFP Basics → ellipsis menu → Medical row',
+    run: runS310,
   },
 ];
 
@@ -228,6 +234,15 @@ async function runS39(page) {
     rfpId: opened.rfpId,
     rfpUrl: opened.rfpUrl,
     screenshotPath: opened.screenshotPath,
+  };
+}
+
+async function runS310(page) {
+  const medical = await selectMedicalFromRfpBasicsEllipsis(page);
+
+  return {
+    medicalUrl: medical.medicalUrl,
+    screenshotPath: medical.screenshotPath,
   };
 }
 
