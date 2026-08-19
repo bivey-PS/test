@@ -276,6 +276,33 @@ function hashFragmentPattern(fragment) {
   return new RegExp(`#${escaped}(?:[/?#]|$)`);
 }
 
+function urlHasHashFragment(pageOrUrl, fragment) {
+  const url = typeof pageOrUrl === 'string' ? pageOrUrl : pageOrUrl.url();
+  return hashFragmentPattern(fragment).test(url);
+}
+
+async function waitForWizardBackgroundProcessing(page, timeout = 180000) {
+  const processingMessages = [
+    page.getByText(/Creating Plan Details/i),
+    page.getByText(/Attaching .* documents/i),
+  ];
+
+  for (const message of processingMessages) {
+    if ((await message.count()) > 0 && (await message.first().isVisible().catch(() => false))) {
+      console.log('Waiting for wizard background processing to finish');
+      await message.first().waitFor({ state: 'hidden', timeout }).catch(() => {});
+      await message.first().waitFor({ state: 'detached', timeout: 30000 }).catch(() => {});
+    }
+  }
+
+  await page
+    .locator('#content-overlay, #content-loading-spinner, .modal-backdrop, .overlay')
+    .waitFor({ state: 'hidden', timeout: 120000 })
+    .catch(() => {});
+  await page.getByText('Loading...').waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
+  await waitForPageReady(page, timeout);
+}
+
 async function waitForPageReady(page, timeout = 60000) {
   const loading = page.getByText('Loading...');
   if ((await loading.count()) > 0) {
@@ -433,7 +460,7 @@ async function startNewRfpBasicsTab(page) {
   };
 }
 
-async function clickSaveAndContinue(page, expectedUrlPattern, buttonNamePattern = 'Save & Continue') {
+async function clickSaveAndContinue(page, expectedUrlPattern, buttonNamePattern = 'Save & Continue', timeout = 60000) {
   const saveButton = page.getByRole('button', {
     name: typeof buttonNamePattern === 'string' ? new RegExp(buttonNamePattern, 'i') : buttonNamePattern,
   });
@@ -442,7 +469,7 @@ async function clickSaveAndContinue(page, expectedUrlPattern, buttonNamePattern 
   await saveButton.first().evaluate((element) => element.click());
 
   if (expectedUrlPattern) {
-    await waitForUrlMatch(page, expectedUrlPattern, 60000);
+    await waitForUrlMatch(page, expectedUrlPattern, timeout);
   }
 
   await waitForPageReady(page);
@@ -516,9 +543,18 @@ async function saveBenefitTypesAndContinue(page) {
   console.log('Saving Benefit Types and continuing');
 
   await selectMedicalMarketingBenefitType(page);
-  await clickSaveAndContinue(page, hashFragmentPattern('rfpBuilderCommunityRatedPlans'));
+  await clickSaveAndContinue(
+    page,
+    new RegExp(
+      `${hashFragmentPattern('rfpBuilderCommunityRatedPlans').source}|${hashFragmentPattern('rfpBuilderCommunityRatedPlansCensus').source}`,
+    ),
+  );
+  await waitForWizardBackgroundProcessing(page);
 
-  if (!page.url().includes('#rfpBuilderCommunityRatedPlans')) {
+  if (
+    !urlHasHashFragment(page, 'rfpBuilderCommunityRatedPlans') &&
+    !urlHasHashFragment(page, 'rfpBuilderCommunityRatedPlansCensus')
+  ) {
     throw new Error('Did not navigate to Community Rated Plans after saving Benefit Types');
   }
 
@@ -532,31 +568,61 @@ async function saveBenefitTypesAndContinue(page) {
   };
 }
 
-async function saveCommunityRatedPlansAndContinue(page) {
-  console.log('Saving Community Rated Plans and continuing');
+async function continueFromCommunityRatedCensus(page) {
+  await page.getByText(/Upload Employer Census/i).waitFor({ state: 'visible', timeout: 60000 }).catch(() => {});
+  await waitForWizardBackgroundProcessing(page);
 
-  if (page.url().includes('#rfpBuilderCommunityRatedPlansCensus')) {
-    console.log('Community Rated census step detected — continuing to documents');
-    await waitForPageReady(page);
-    await clickSaveAndContinue(page, hashFragmentPattern('rfpBuilderDocuments'));
-  } else {
-    if (!page.url().includes('#rfpBuilderCommunityRatedPlans')) {
-      throw new Error('Expected to be on Community Rated Plans wizard step');
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    if (urlHasHashFragment(page, 'rfpBuilderDocuments')) {
+      return;
     }
 
-    await clickSaveAndContinue(
-      page,
-      new RegExp(`${hashFragmentPattern('rfpBuilderDocuments').source}|${hashFragmentPattern('rfpBuilderCommunityRatedPlansCensus').source}`),
-    );
+    console.log(`Continuing from Community Rated census to documents (attempt ${attempt})`);
+    await clickSaveAndContinue(page, hashFragmentPattern('rfpBuilderDocuments'), 'Save & Continue', 120000);
 
-    if (page.url().includes('#rfpBuilderCommunityRatedPlansCensus')) {
-      console.log('Community Rated census step detected — continuing to documents');
-      await waitForPageReady(page);
-      await clickSaveAndContinue(page, hashFragmentPattern('rfpBuilderDocuments'));
+    if (urlHasHashFragment(page, 'rfpBuilderDocuments')) {
+      return;
+    }
+
+    if (attempt < 3) {
+      console.log('Documents step not reached yet — waiting and retrying Save & Continue');
+      await waitForWizardBackgroundProcessing(page);
+      await page.waitForTimeout(3000);
     }
   }
 
-  if (!page.url().includes('#rfpBuilderDocuments')) {
+  if (!urlHasHashFragment(page, 'rfpBuilderDocuments')) {
+    throw new Error('Did not navigate to RFP Quoting Documents from Community Rated census');
+  }
+}
+
+async function saveCommunityRatedPlansAndContinue(page) {
+  console.log('Saving Community Rated Plans and continuing');
+  await waitForWizardBackgroundProcessing(page);
+
+  if (urlHasHashFragment(page, 'rfpBuilderDocuments')) {
+    console.log('Already on RFP Quoting Documents — skipping Community Rated save');
+  } else if (urlHasHashFragment(page, 'rfpBuilderCommunityRatedPlansCensus')) {
+    console.log('Community Rated census step detected — continuing to documents');
+    await continueFromCommunityRatedCensus(page);
+  } else if (urlHasHashFragment(page, 'rfpBuilderCommunityRatedPlans')) {
+    await clickSaveAndContinue(
+      page,
+      new RegExp(
+        `${hashFragmentPattern('rfpBuilderDocuments').source}|${hashFragmentPattern('rfpBuilderCommunityRatedPlansCensus').source}`,
+      ),
+    );
+    await waitForWizardBackgroundProcessing(page);
+
+    if (urlHasHashFragment(page, 'rfpBuilderCommunityRatedPlansCensus')) {
+      console.log('Community Rated census step detected — continuing to documents');
+      await continueFromCommunityRatedCensus(page);
+    }
+  } else {
+    throw new Error('Expected to be on Community Rated Plans wizard step');
+  }
+
+  if (!urlHasHashFragment(page, 'rfpBuilderDocuments')) {
     throw new Error('Did not navigate to RFP Quoting Documents after saving Community Rated Plans');
   }
 
