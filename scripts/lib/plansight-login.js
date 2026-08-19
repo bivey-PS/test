@@ -750,6 +750,7 @@ async function selectMedicalFromRfpBasicsEllipsis(page) {
     timeout: 60000,
   });
   await waitForPageReady(page);
+  await page.locator('button.nav-quote-create').waitFor({ state: 'visible', timeout: 60000 });
 
   const currentUrl = page.url();
   const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-rfp-basics-medical-selected.png');
@@ -760,6 +761,36 @@ async function selectMedicalFromRfpBasicsEllipsis(page) {
 
   return {
     medicalUrl: currentUrl,
+    screenshotPath,
+  };
+}
+
+async function clickAddQuoteButton(page) {
+  console.log('Clicking Add Quote + button');
+
+  await page.waitForURL(/#gridInit\/medical/, { timeout: 60000 });
+  await waitForPageReady(page);
+  await page.getByText('Loading...').waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
+
+  const quotesTab = page.locator('.group-nav-tabs-container li.group-nav-tab.quotes.active-tab');
+  await quotesTab.waitFor({ state: 'visible', timeout: 60000 }).catch(() => {});
+
+  const addQuoteButton = page.locator('button.nav-quote-create');
+  await addQuoteButton.waitFor({ state: 'visible', timeout: 60000 });
+  await addQuoteButton.scrollIntoViewIfNeeded();
+  await addQuoteButton.click();
+
+  const addQuoteDialog = page.locator('.bootbox.modal.in').filter({ hasText: /Create New Quote/i });
+  await addQuoteDialog.waitFor({ state: 'visible', timeout: 30000 });
+  await addQuoteDialog.locator('label[for="insuranceType"]').waitFor({ state: 'visible', timeout: 30000 });
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-add-quote-opened.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log('Clicked Add Quote + button');
+  console.log(`Saved Add Quote screenshot: ${screenshotPath}`);
+
+  return {
+    quotesUrl: page.url(),
     screenshotPath,
   };
 }
@@ -1312,6 +1343,7 @@ module.exports = {
   saveMedicalPlanDetailsAndContinue,
   selectMedicalFromDistributionListDropdown,
   selectMedicalFromRfpBasicsEllipsis,
+  clickAddQuoteButton,
   clickBackToEmployerProfile,
   verifyRequestForProposalsRfpRow,
   openRfpFromMarketingTableByName,

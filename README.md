@@ -75,6 +75,7 @@ The PS-9250 Minimum Gate suite verifies:
 - **S3.8** Request for Proposals → row for `{employer} {YYYY-MM-DD}*`
 - **S3.9** Request for Proposals → click **Name** link to open the RFP
 - **S3.10** RFP Basics → vertical ellipsis menu → **Medical** row
+- **S3.11** Medical Quotes → click **Add Quote +** button
 
 Reports are written to:
 - `automation-output/ps-9250-minimum-gate-report.json`

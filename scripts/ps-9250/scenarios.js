@@ -14,6 +14,7 @@ const {
   verifyRequestForProposalsRfpRow,
   openRfpFromMarketingTableByName,
   selectMedicalFromRfpBasicsEllipsis,
+  clickAddQuoteButton,
   isLoggedIn,
 } = require('../lib/plansight-login');
 
@@ -90,6 +91,11 @@ const SCENARIOS = [
     id: 'S3.10',
     name: 'RFP Basics → ellipsis menu → Medical row',
     run: runS310,
+  },
+  {
+    id: 'S3.11',
+    name: 'Medical Quotes → click Add Quote + button',
+    run: runS311,
   },
 ];
 
@@ -243,6 +249,15 @@ async function runS310(page) {
   return {
     medicalUrl: medical.medicalUrl,
     screenshotPath: medical.screenshotPath,
+  };
+}
+
+async function runS311(page) {
+  const addQuote = await clickAddQuoteButton(page);
+
+  return {
+    quotesUrl: addQuote.quotesUrl,
+    screenshotPath: addQuote.screenshotPath,
   };
 }
 
