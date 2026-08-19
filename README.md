@@ -77,6 +77,7 @@ The PS-9250 Minimum Gate suite verifies:
 - **S3.10** RFP Basics → vertical ellipsis menu → **Medical** row
 - **S3.11** Medical Quotes → click **Add Quote +** button
 - **S3.12** Create New Quote → **Carrier** dropdown → type `a` → Enter
+- **S3.13** Create New Quote → **Click to upload** → select `doc - sbc silver 5000 Valuecare.pdf`
 
 Reports are written to:
 - `automation-output/ps-9250-minimum-gate-report.json`

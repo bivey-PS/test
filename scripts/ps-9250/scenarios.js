@@ -16,6 +16,7 @@ const {
   selectMedicalFromRfpBasicsEllipsis,
   clickAddQuoteButton,
   selectCarrierInCreateNewQuoteModal,
+  uploadQuoteDocumentInCreateNewQuoteModal,
   isLoggedIn,
 } = require('../lib/plansight-login');
 
@@ -102,6 +103,11 @@ const SCENARIOS = [
     id: 'S3.12',
     name: 'Create New Quote → Carrier dropdown → type "a" → Enter',
     run: runS312,
+  },
+  {
+    id: 'S3.13',
+    name: 'Create New Quote → Click to upload → select doc - sbc silver 5000 Valuecare',
+    run: runS313,
   },
 ];
 
@@ -274,6 +280,16 @@ async function runS312(page) {
     carrierId: carrier.carrierId,
     carrierName: carrier.carrierName,
     screenshotPath: carrier.screenshotPath,
+  };
+}
+
+async function runS313(page) {
+  const upload = await uploadQuoteDocumentInCreateNewQuoteModal(page);
+
+  return {
+    fileName: upload.fileName,
+    fixturePath: upload.fixturePath,
+    screenshotPath: upload.screenshotPath,
   };
 }
 

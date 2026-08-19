@@ -855,6 +855,57 @@ async function selectCarrierInCreateNewQuoteModal(page, searchText = 'a') {
   };
 }
 
+async function uploadQuoteDocumentInCreateNewQuoteModal(
+  page,
+  fileName = 'doc - sbc silver 5000 Valuecare.pdf',
+) {
+  console.log(`Uploading quote document via Click to upload: ${fileName}`);
+
+  const dialog = await getCreateNewQuoteDialog(page);
+  const fixturePath = path.join(__dirname, '..', 'ps-9250', 'fixtures', fileName);
+
+  if (!fs.existsSync(fixturePath)) {
+    throw new Error(`Upload fixture not found: ${fixturePath}`);
+  }
+
+  const dropzone = dialog.locator('#quotesDropzone');
+  await dropzone.waitFor({ state: 'visible', timeout: 30000 });
+  await dropzone.getByText('Click to upload').waitFor({ state: 'visible', timeout: 30000 });
+
+  const [fileChooser] = await Promise.all([
+    page.waitForEvent('filechooser', { timeout: 30000 }),
+    dropzone.click(),
+  ]);
+
+  console.log(`Selecting "${fileName}" in Open dialog`);
+  await fileChooser.setFiles(fixturePath);
+
+  const uploadedPreview = dialog.locator('#quotesDropzone .dz-preview.dz-success');
+  await uploadedPreview.waitFor({ state: 'visible', timeout: 60000 });
+
+  const uploadedFile = await page.evaluate(() => ({
+    fileName: document.querySelector('#quotesDropzone .dz-filename')?.textContent?.trim(),
+  }));
+
+  if (!uploadedFile.fileName?.includes('doc - sbc silver 5000 Valuecare')) {
+    throw new Error(
+      `Expected uploaded file name to include "doc - sbc silver 5000 Valuecare", got: ${uploadedFile.fileName || 'none'}`,
+    );
+  }
+
+  console.log(`Uploaded quote document: ${uploadedFile.fileName}`);
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-create-quote-document-uploaded.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved Create New Quote upload screenshot: ${screenshotPath}`);
+
+  return {
+    fileName: uploadedFile.fileName,
+    fixturePath,
+    screenshotPath,
+  };
+}
+
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -1405,6 +1456,7 @@ module.exports = {
   selectMedicalFromRfpBasicsEllipsis,
   clickAddQuoteButton,
   selectCarrierInCreateNewQuoteModal,
+  uploadQuoteDocumentInCreateNewQuoteModal,
   clickBackToEmployerProfile,
   verifyRequestForProposalsRfpRow,
   openRfpFromMarketingTableByName,
