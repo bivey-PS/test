@@ -271,6 +271,11 @@ async function navigateToEmployers(page) {
   };
 }
 
+function hashFragmentPattern(fragment) {
+  const escaped = fragment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`#${escaped}(?:[/?#]|$)`);
+}
+
 async function waitForPageReady(page, timeout = 60000) {
   const loading = page.getByText('Loading...');
   if ((await loading.count()) > 0) {
@@ -278,6 +283,20 @@ async function waitForPageReady(page, timeout = 60000) {
   }
 
   await page.waitForLoadState('networkidle', { timeout }).catch(() => {});
+}
+
+async function waitForUrlMatch(page, pattern, timeout = 60000) {
+  const regex = pattern instanceof RegExp ? pattern : new RegExp(pattern);
+
+  if (regex.test(page.url())) {
+    return;
+  }
+
+  await page.waitForFunction(
+    ({ source, flags }) => new RegExp(source, flags).test(window.location.href),
+    { source: regex.source, flags: regex.flags.replace('g', '') },
+    { timeout },
+  );
 }
 
 async function openAceTestingEmployer(page) {
@@ -419,11 +438,11 @@ async function clickSaveAndContinue(page, expectedUrlPattern, buttonNamePattern 
     name: typeof buttonNamePattern === 'string' ? new RegExp(buttonNamePattern, 'i') : buttonNamePattern,
   });
   await saveButton.waitFor({ state: 'visible', timeout: 30000 });
-  await saveButton.scrollIntoViewIfNeeded();
-  await saveButton.click();
+  await page.locator('#content-overlay, #content-loading-spinner').waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
+  await saveButton.first().evaluate((element) => element.click());
 
   if (expectedUrlPattern) {
-    await page.waitForURL(expectedUrlPattern, { timeout: 60000 });
+    await waitForUrlMatch(page, expectedUrlPattern, 60000);
   }
 
   await waitForPageReady(page);
@@ -436,7 +455,7 @@ async function saveRfpBasicsAndContinue(page) {
     throw new Error('Expected to be on RFP Basics wizard step');
   }
 
-  await clickSaveAndContinue(page, /#rfpBuilderPlanTypes/);
+  await clickSaveAndContinue(page, hashFragmentPattern('rfpBuilderPlanTypes'));
 
   if (!page.url().includes('#rfpBuilderPlanTypes')) {
     throw new Error('Did not navigate to Choose Benefit Types after saving RFP Basics');
@@ -497,7 +516,7 @@ async function saveBenefitTypesAndContinue(page) {
   console.log('Saving Benefit Types and continuing');
 
   await selectMedicalMarketingBenefitType(page);
-  await clickSaveAndContinue(page, /#rfpBuilderCommunityRatedPlans/);
+  await clickSaveAndContinue(page, hashFragmentPattern('rfpBuilderCommunityRatedPlans'));
 
   if (!page.url().includes('#rfpBuilderCommunityRatedPlans')) {
     throw new Error('Did not navigate to Community Rated Plans after saving Benefit Types');
@@ -516,11 +535,26 @@ async function saveBenefitTypesAndContinue(page) {
 async function saveCommunityRatedPlansAndContinue(page) {
   console.log('Saving Community Rated Plans and continuing');
 
-  if (!page.url().includes('#rfpBuilderCommunityRatedPlans')) {
-    throw new Error('Expected to be on Community Rated Plans wizard step');
-  }
+  if (page.url().includes('#rfpBuilderCommunityRatedPlansCensus')) {
+    console.log('Community Rated census step detected — continuing to documents');
+    await waitForPageReady(page);
+    await clickSaveAndContinue(page, hashFragmentPattern('rfpBuilderDocuments'));
+  } else {
+    if (!page.url().includes('#rfpBuilderCommunityRatedPlans')) {
+      throw new Error('Expected to be on Community Rated Plans wizard step');
+    }
 
-  await clickSaveAndContinue(page, /#rfpBuilderDocuments/);
+    await clickSaveAndContinue(
+      page,
+      new RegExp(`${hashFragmentPattern('rfpBuilderDocuments').source}|${hashFragmentPattern('rfpBuilderCommunityRatedPlansCensus').source}`),
+    );
+
+    if (page.url().includes('#rfpBuilderCommunityRatedPlansCensus')) {
+      console.log('Community Rated census step detected — continuing to documents');
+      await waitForPageReady(page);
+      await clickSaveAndContinue(page, hashFragmentPattern('rfpBuilderDocuments'));
+    }
+  }
 
   if (!page.url().includes('#rfpBuilderDocuments')) {
     throw new Error('Did not navigate to RFP Quoting Documents after saving Community Rated Plans');
@@ -543,7 +577,7 @@ async function saveDocumentsForCarrierQuotingAndContinue(page) {
     throw new Error('Expected to be on Documents for Carrier Quoting wizard step');
   }
 
-  await clickSaveAndContinue(page, /#rfpBuilderPlanDetails/);
+  await clickSaveAndContinue(page, hashFragmentPattern('rfpBuilderPlanDetails'));
 
   if (!page.url().includes('#rfpBuilderPlanDetails')) {
     throw new Error(
@@ -562,7 +596,7 @@ async function saveDocumentsForCarrierQuotingAndContinue(page) {
 }
 
 async function openMedicalPlanDetails(page) {
-  if (page.url().includes('#rfpBuilderPlanDetails') && page.url().includes('planType=medical')) {
+  if (page.url().includes('planType=medical')) {
     return;
   }
 
@@ -573,8 +607,21 @@ async function openMedicalPlanDetails(page) {
   const medicalPlanDetails = page.locator('a[href*="#rfpBuilderPlanDetails"][href*="planType=medical"]');
   if ((await medicalPlanDetails.count()) > 0) {
     await medicalPlanDetails.first().click();
-    await page.waitForURL(/#rfpBuilderPlanDetails.*planType=medical/, { timeout: 60000 });
+    await waitForUrlMatch(page, /planType=medical/, 60000);
     await waitForPageReady(page);
+    return;
+  }
+
+  const medicalSidebar = page.getByRole('link', { name: /Medical \(Marketing\)/i });
+  if ((await medicalSidebar.count()) > 0) {
+    await medicalSidebar.first().click();
+    await waitForUrlMatch(page, /planType=medical/, 60000);
+    await waitForPageReady(page);
+    return;
+  }
+
+  if (!page.url().includes('planType=medical')) {
+    throw new Error('Could not open Medical Plan Details from Verify Plan Details step');
   }
 }
 
@@ -605,18 +652,17 @@ async function saveMedicalPlanDetailsAndContinue(page) {
     await saveButton.first().waitFor({ state: 'visible', timeout: 30000 });
     const buttonLabel = (await saveButton.first().textContent())?.trim().replace(/\s+/g, ' ') || '';
 
-    await saveButton.first().scrollIntoViewIfNeeded();
     await saveButton.first().evaluate((element) => element.click());
 
     if (/Save & go to Distribution/i.test(buttonLabel)) {
-      await page.waitForURL(/#rfpBuilderDistributionList/, { timeout: 120000 });
+      await waitForUrlMatch(page, hashFragmentPattern('rfpBuilderDistributionList'), 120000);
       break;
     }
 
     if (/Save & go to Dental/i.test(buttonLabel)) {
-      await page.waitForURL(/planType=dental/, { timeout: 60000 });
+      await waitForUrlMatch(page, /planType=dental/, 120000);
     } else if (/Save & go to Vision/i.test(buttonLabel)) {
-      await page.waitForURL(/planType=vision/, { timeout: 60000 });
+      await waitForUrlMatch(page, /planType=vision/, 120000);
     } else {
       await page.waitForTimeout(2000);
       if (page.url().includes('#rfpBuilderDistributionList')) {
