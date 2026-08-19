@@ -18,6 +18,7 @@ const {
   selectCarrierInCreateNewQuoteModal,
   uploadQuoteDocumentInCreateNewQuoteModal,
   submitCreateNewQuoteModal,
+  waitForQuoteProcessingAndSaveChanges,
   isLoggedIn,
 } = require('../lib/plansight-login');
 
@@ -114,6 +115,11 @@ const SCENARIOS = [
     id: 'S3.14',
     name: 'Create New Quote → click Create New Quote button',
     run: runS314,
+  },
+  {
+    id: 'S3.15',
+    name: 'Quote - Medical → wait for AI processing → Save Changes',
+    run: runS315,
   },
 ];
 
@@ -305,6 +311,16 @@ async function runS314(page) {
   return {
     quoteUrl: quote.quoteUrl,
     screenshotPath: quote.screenshotPath,
+  };
+}
+
+async function runS315(page) {
+  const saved = await waitForQuoteProcessingAndSaveChanges(page);
+
+  return {
+    quoteUrl: saved.quoteUrl,
+    sawProcessing: saved.sawProcessing,
+    screenshotPath: saved.screenshotPath,
   };
 }
 

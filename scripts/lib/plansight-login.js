@@ -939,6 +939,61 @@ async function submitCreateNewQuoteModal(page) {
   };
 }
 
+async function waitForQuoteProcessingAndSaveChanges(page) {
+  console.log('Waiting for Plansight AI document processing to complete');
+
+  if (!page.url().includes('#planGroupQuoteCreate/medical')) {
+    throw new Error('Expected to be on Quote - Medical create view');
+  }
+
+  const processingMessage = page.getByText(
+    'Plansight is processing your document(s). Please check back soon.',
+    { exact: true },
+  );
+  const completedMessage = page.getByText(
+    'Plansight processing completed. Fill the quote using a source below.',
+    { exact: true },
+  );
+
+  const sawProcessing = await processingMessage
+    .first()
+    .waitFor({ state: 'visible', timeout: 120000 })
+    .then(() => true)
+    .catch(() => false);
+
+  if (sawProcessing) {
+    console.log(
+      'Detected processing message: Plansight is processing your document(s). Please check back soon.',
+    );
+  } else {
+    console.log('Processing message not visible; waiting for completion text');
+  }
+
+  await completedMessage.first().waitFor({ state: 'visible', timeout: 600000 });
+  console.log(
+    'Detected completion message: Plansight processing completed. Fill the quote using a source below.',
+  );
+
+  const saveButton = page.getByRole('button', { name: /Save Changes/i });
+  await saveButton.waitFor({ state: 'visible', timeout: 30000 });
+  await saveButton.scrollIntoViewIfNeeded();
+  await saveButton.click();
+  console.log('Clicked Save Changes');
+
+  await waitForPageReady(page);
+  await page.getByText('Loading...').waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-quote-save-changes.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved quote Save Changes screenshot: ${screenshotPath}`);
+
+  return {
+    quoteUrl: page.url(),
+    sawProcessing,
+    screenshotPath,
+  };
+}
+
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -1491,6 +1546,7 @@ module.exports = {
   selectCarrierInCreateNewQuoteModal,
   uploadQuoteDocumentInCreateNewQuoteModal,
   submitCreateNewQuoteModal,
+  waitForQuoteProcessingAndSaveChanges,
   clickBackToEmployerProfile,
   verifyRequestForProposalsRfpRow,
   openRfpFromMarketingTableByName,
