@@ -21,9 +21,11 @@ const {
   waitForQuoteProcessingAndSaveChanges,
   isLoggedIn,
 } = require('../lib/plansight-login');
+const { getNextRunNumber } = require('./run-counter');
 
 let currentRfpId = null;
 let currentMatchedRfpName = null;
+let currentRfpName = null;
 
 const SCENARIOS = [
   {
@@ -48,7 +50,7 @@ const SCENARIOS = [
   },
   {
     id: 'S3.2',
-    name: 'RFP Basics → set RFP Name to Ace Testing {date} Automation → Save & Continue',
+    name: 'RFP Basics → set RFP Name to Ace Testing {date} Automation {run#} → Save & Continue',
     run: runS32,
   },
   {
@@ -172,11 +174,14 @@ async function runS31(page) {
 }
 
 async function runS32(page, _context, options) {
-  const wizard = await saveRfpBasicsAndContinue(page, options.employerName);
+  const runNumber = getNextRunNumber();
+  const wizard = await saveRfpBasicsAndContinue(page, options.employerName, runNumber);
+  currentRfpName = wizard.rfpName;
 
   return {
     wizardUrl: wizard.wizardUrl,
     rfpName: wizard.rfpName,
+    runNumber: wizard.runNumber,
     screenshotPath: wizard.screenshotPath,
   };
 }

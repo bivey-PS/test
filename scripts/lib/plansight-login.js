@@ -475,14 +475,14 @@ async function clickSaveAndContinue(page, expectedUrlPattern, buttonNamePattern 
   await waitForPageReady(page);
 }
 
-async function saveRfpBasicsAndContinue(page, employerName = 'Ace Testing') {
+async function saveRfpBasicsAndContinue(page, employerName = 'Ace Testing', runNumber = null) {
   console.log('Saving RFP Basics and continuing');
 
   if (!page.url().includes('#rfpBuilderBasics')) {
     throw new Error('Expected to be on RFP Basics wizard step');
   }
 
-  const rfpName = buildAutomationRfpName(employerName);
+  const rfpName = buildAutomationRfpName(employerName, new Date(), runNumber);
   await setRfpBasicsName(page, rfpName);
 
   await clickSaveAndContinue(page, hashFragmentPattern('rfpBuilderPlanTypes'));
@@ -499,6 +499,7 @@ async function saveRfpBasicsAndContinue(page, employerName = 'Ace Testing') {
     wizardUrl: page.url(),
     screenshotPath,
     rfpName,
+    runNumber,
   };
 }
 
@@ -1208,8 +1209,13 @@ function buildEmployerDateRfpNamePrefix(employerName, date = new Date()) {
   return `${employerName} ${year}-${month}-${day}`;
 }
 
-function buildAutomationRfpName(employerName = 'Ace Testing', date = new Date()) {
-  return `${buildEmployerDateRfpNamePrefix(employerName, date)} Automation`;
+function buildAutomationRfpName(employerName = 'Ace Testing', date = new Date(), runNumber = null) {
+  const base = `${buildEmployerDateRfpNamePrefix(employerName, date)} Automation`;
+  if (runNumber == null) {
+    return base;
+  }
+
+  return `${base} ${runNumber}`;
 }
 
 async function setRfpBasicsName(page, rfpName) {
