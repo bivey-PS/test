@@ -67,7 +67,7 @@ The PS-9250 Minimum Gate suite verifies:
 - **S3.1** Start new RFP → Basics tab opens
 - **S3.2** RFP Basics → set **RFP Name** to `Ace Testing {YYYY-MM-DD} Automation` → Save & Continue
 - **S3.3** Choose Benefit Types → Medical, Vision, Dental (Marketing) → Save & Continue
-- **S3.3.1** Community Rated Plans → answer **No** on both questions → Save & Continue
+- **S3.3.1** Community Rated Plans → answer **No** on both questions → skip census → Save & Continue
 - **S3.4** Documents for Carrier Quoting → Save & Continue
 - **S3.5** Medical Plan Details → Save & go to Distribution
 - **S3.6** Who Gets the RFP? → ellipsis menu → Medical → Quotes tab highlighted (`#gridInit/medical`) with **Vision** and **Dental** subnav tabs

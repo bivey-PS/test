@@ -58,7 +58,7 @@ const SCENARIOS = [
   },
   {
     id: 'S3.3.1',
-    name: 'Community Rated Plans → answer No on both questions → Save & Continue',
+    name: 'Community Rated Plans → answer No on both questions → skip census → Save & Continue',
     run: runS331,
   },
   {

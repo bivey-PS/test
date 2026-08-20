@@ -572,31 +572,37 @@ async function saveBenefitTypesAndContinue(page) {
   };
 }
 
-async function continueFromCommunityRatedCensus(page) {
-  await page.getByText(/Upload Employer Census/i).waitFor({ state: 'visible', timeout: 60000 }).catch(() => {});
-  await waitForWizardBackgroundProcessing(page);
+async function skipCommunityRatedCensusToDocuments(page) {
+  console.log('Skipping Community Rated census — not required after No/No answers');
 
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    if (urlHasHashFragment(page, 'rfpBuilderDocuments')) {
-      return;
-    }
-
-    console.log(`Continuing from Community Rated census to documents (attempt ${attempt})`);
-    await clickSaveAndContinue(page, hashFragmentPattern('rfpBuilderDocuments'), 'Save & Continue', 120000);
-
-    if (urlHasHashFragment(page, 'rfpBuilderDocuments')) {
-      return;
-    }
-
-    if (attempt < 3) {
-      console.log('Documents step not reached yet — waiting and retrying Save & Continue');
-      await waitForWizardBackgroundProcessing(page);
-      await page.waitForTimeout(3000);
-    }
+  if (urlHasHashFragment(page, 'rfpBuilderDocuments')) {
+    return;
   }
 
-  if (!urlHasHashFragment(page, 'rfpBuilderDocuments')) {
-    throw new Error('Did not navigate to RFP Quoting Documents from Community Rated census');
+  if (!urlHasHashFragment(page, 'rfpBuilderCommunityRatedPlansCensus')) {
+    return;
+  }
+
+  await page.locator('#content-overlay, #content-loading-spinner').waitFor({ state: 'hidden', timeout: 30000 }).catch(() => {});
+
+  const saveButton = page.getByRole('button', { name: /Save & Continue/i });
+  await saveButton.first().waitFor({ state: 'visible', timeout: 30000 });
+  await saveButton.first().evaluate((element) => element.click());
+  await waitForUrlMatch(page, hashFragmentPattern('rfpBuilderDocuments'), 60000);
+  await page.getByText('Loading...').waitFor({ state: 'hidden', timeout: 30000 }).catch(() => {});
+}
+
+async function continueFromCommunityRatedPlansToDocuments(page) {
+  await answerCommunityRatedQuestionsNo(page);
+  await clickSaveAndContinue(
+    page,
+    new RegExp(
+      `${hashFragmentPattern('rfpBuilderDocuments').source}|${hashFragmentPattern('rfpBuilderCommunityRatedPlansCensus').source}`,
+    ),
+  );
+
+  if (urlHasHashFragment(page, 'rfpBuilderCommunityRatedPlansCensus')) {
+    await skipCommunityRatedCensusToDocuments(page);
   }
 }
 
@@ -659,22 +665,9 @@ async function saveCommunityRatedPlansAndContinue(page) {
   if (urlHasHashFragment(page, 'rfpBuilderDocuments')) {
     console.log('Already on RFP Quoting Documents — skipping Community Rated save');
   } else if (urlHasHashFragment(page, 'rfpBuilderCommunityRatedPlansCensus')) {
-    console.log('Community Rated census step detected — continuing to documents');
-    await continueFromCommunityRatedCensus(page);
+    await skipCommunityRatedCensusToDocuments(page);
   } else if (urlHasHashFragment(page, 'rfpBuilderCommunityRatedPlans')) {
-    await answerCommunityRatedQuestionsNo(page);
-    await clickSaveAndContinue(
-      page,
-      new RegExp(
-        `${hashFragmentPattern('rfpBuilderDocuments').source}|${hashFragmentPattern('rfpBuilderCommunityRatedPlansCensus').source}`,
-      ),
-    );
-    await waitForWizardBackgroundProcessing(page);
-
-    if (urlHasHashFragment(page, 'rfpBuilderCommunityRatedPlansCensus')) {
-      console.log('Community Rated census step detected — continuing to documents');
-      await continueFromCommunityRatedCensus(page);
-    }
+    await continueFromCommunityRatedPlansToDocuments(page);
   } else {
     throw new Error('Expected to be on Community Rated Plans wizard step');
   }
