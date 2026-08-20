@@ -596,6 +596,58 @@ async function continueFromCommunityRatedCensus(page) {
   }
 }
 
+async function clickNoForCommunityRatedQuestion(page, questionPattern, questionIndex = 0) {
+  const question = page.getByText(questionPattern);
+  await question.first().waitFor({ state: 'visible', timeout: 30000 });
+
+  const questionSection = page
+    .locator('div, section, fieldset, li, tr, .form-group, .panel, .card, .question')
+    .filter({ has: question })
+    .last();
+
+  const noAnswer = questionSection
+    .getByRole('button', { name: /^No$/i })
+    .or(questionSection.getByRole('radio', { name: /^No$/i }))
+    .or(questionSection.locator('label').filter({ hasText: /^No$/i }))
+    .or(
+      questionSection.locator(
+        '[data-value="no"], [data-value="false"], [value="no"], [value="false"], input[type="radio"][value="0"]',
+      ),
+    );
+
+  if ((await noAnswer.count()) > 0) {
+    await noAnswer.first().evaluate((element) => element.click());
+    console.log(`Selected No for Community Rated question matching ${questionPattern}`);
+    return;
+  }
+
+  const visibleNoButtons = page.getByRole('button', { name: /^No$/i });
+  if ((await visibleNoButtons.count()) > questionIndex) {
+    await visibleNoButtons.nth(questionIndex).evaluate((element) => element.click());
+    console.log(`Selected No via ordered button fallback for question ${questionIndex + 1}`);
+    return;
+  }
+
+  throw new Error(`Could not find No answer for Community Rated question matching ${questionPattern}`);
+}
+
+async function answerCommunityRatedQuestionsNo(page) {
+  console.log('Answering Community Rated questions with No');
+
+  if (!urlHasHashFragment(page, 'rfpBuilderCommunityRatedPlans')) {
+    return;
+  }
+
+  const questions = [
+    /Does this employer Group currently have a Community Rated Medical Plan\?/i,
+    /Do you want to explore community rated plans for their upcoming plan year\?/i,
+  ];
+
+  for (let index = 0; index < questions.length; index += 1) {
+    await clickNoForCommunityRatedQuestion(page, questions[index], index);
+  }
+}
+
 async function saveCommunityRatedPlansAndContinue(page) {
   console.log('Saving Community Rated Plans and continuing');
   await waitForWizardBackgroundProcessing(page);
@@ -606,6 +658,7 @@ async function saveCommunityRatedPlansAndContinue(page) {
     console.log('Community Rated census step detected — continuing to documents');
     await continueFromCommunityRatedCensus(page);
   } else if (urlHasHashFragment(page, 'rfpBuilderCommunityRatedPlans')) {
+    await answerCommunityRatedQuestionsNo(page);
     await clickSaveAndContinue(
       page,
       new RegExp(
@@ -1648,6 +1701,7 @@ module.exports = {
   startNewRfpBasicsTab,
   saveRfpBasicsAndContinue,
   selectMedicalMarketingBenefitType,
+  answerCommunityRatedQuestionsNo,
   saveBenefitTypesAndContinue,
   saveCommunityRatedPlansAndContinue,
   saveDocumentsForCarrierQuotingAndContinue,
