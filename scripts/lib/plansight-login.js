@@ -1136,6 +1136,9 @@ async function waitForQuoteProcessingAndSaveChanges(page) {
     'Detected completion message: Plansight processing completed. Fill the quote using a source below.',
   );
 
+  console.log('Waiting 3 seconds before Save Changes to avoid race with processing completion');
+  await page.waitForTimeout(3000);
+
   const saveButton = page.getByRole('button', { name: /Save Changes/i });
   await saveButton.waitFor({ state: 'visible', timeout: 30000 });
   await saveButton.scrollIntoViewIfNeeded();
