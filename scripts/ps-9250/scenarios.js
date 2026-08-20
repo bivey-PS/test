@@ -48,7 +48,7 @@ const SCENARIOS = [
   },
   {
     id: 'S3.2',
-    name: 'RFP Basics → Save & Continue',
+    name: 'RFP Basics → set RFP Name to Ace Testing {date} Automation → Save & Continue',
     run: runS32,
   },
   {
@@ -171,11 +171,12 @@ async function runS31(page) {
   };
 }
 
-async function runS32(page) {
-  const wizard = await saveRfpBasicsAndContinue(page);
+async function runS32(page, _context, options) {
+  const wizard = await saveRfpBasicsAndContinue(page, options.employerName);
 
   return {
     wizardUrl: wizard.wizardUrl,
+    rfpName: wizard.rfpName,
     screenshotPath: wizard.screenshotPath,
   };
 }

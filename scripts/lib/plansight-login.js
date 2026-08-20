@@ -475,12 +475,15 @@ async function clickSaveAndContinue(page, expectedUrlPattern, buttonNamePattern 
   await waitForPageReady(page);
 }
 
-async function saveRfpBasicsAndContinue(page) {
+async function saveRfpBasicsAndContinue(page, employerName = 'Ace Testing') {
   console.log('Saving RFP Basics and continuing');
 
   if (!page.url().includes('#rfpBuilderBasics')) {
     throw new Error('Expected to be on RFP Basics wizard step');
   }
+
+  const rfpName = buildAutomationRfpName(employerName);
+  await setRfpBasicsName(page, rfpName);
 
   await clickSaveAndContinue(page, hashFragmentPattern('rfpBuilderPlanTypes'));
 
@@ -495,6 +498,7 @@ async function saveRfpBasicsAndContinue(page) {
   return {
     wizardUrl: page.url(),
     screenshotPath,
+    rfpName,
   };
 }
 
@@ -1208,6 +1212,39 @@ function buildEmployerDateRfpNamePrefix(employerName, date = new Date()) {
   return `${employerName} ${year}-${month}-${day}`;
 }
 
+function buildAutomationRfpName(employerName = 'Ace Testing', date = new Date()) {
+  return `${buildEmployerDateRfpNamePrefix(employerName, date)} Automation`;
+}
+
+async function setRfpBasicsName(page, rfpName) {
+  console.log(`Setting RFP Name to "${rfpName}"`);
+
+  if (!page.url().includes('#rfpBuilderBasics')) {
+    throw new Error('Expected to be on RFP Basics wizard step');
+  }
+
+  await waitForPageReady(page);
+  await page.locator('label').filter({ hasText: /RFP Name/i }).first().waitFor({ state: 'visible', timeout: 30000 });
+
+  const rfpNameInput = page
+    .getByLabel(/RFP Name/i)
+    .or(page.locator('input[name="name"]'))
+    .or(page.locator('input[id*="rfp" i][id*="name" i]'))
+    .or(
+      page.locator('label').filter({ hasText: /RFP Name/i }).locator('xpath=following::input[1]'),
+    );
+
+  await rfpNameInput.first().waitFor({ state: 'visible', timeout: 30000 });
+  await rfpNameInput.first().click();
+  await rfpNameInput.first().fill(rfpName);
+  await rfpNameInput.first().blur();
+
+  const currentValue = await rfpNameInput.first().inputValue();
+  if (currentValue.trim() !== rfpName) {
+    throw new Error(`RFP Name field value "${currentValue}" did not match expected "${rfpName}"`);
+  }
+}
+
 function getEmployerDateRfpNamePrefixes(employerName, date = new Date()) {
   const prefixes = [buildEmployerDateRfpNamePrefix(employerName, date)];
   const yesterday = new Date(date);
@@ -1700,6 +1737,8 @@ module.exports = {
   openEmployerGroup,
   startNewRfpBasicsTab,
   saveRfpBasicsAndContinue,
+  setRfpBasicsName,
+  buildAutomationRfpName,
   selectMedicalMarketingBenefitType,
   answerCommunityRatedQuestionsNo,
   saveBenefitTypesAndContinue,
