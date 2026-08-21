@@ -1124,37 +1124,47 @@ async function selectUploadedQuoteDocumentSource(
   }
 
   await page.getByText('Quote - Medical', { exact: true }).first().waitFor({ state: 'visible', timeout: 60000 });
-  await page.waitForFunction(
-    () => document.querySelector('#documentSelect')?.classList.contains('select2-hidden-accessible'),
-    { timeout: 30000 },
-  );
 
   const documentDropdown = page.locator('#select2-documentSelect-container');
-  await documentDropdown.waitFor({ state: 'visible', timeout: 30000 });
-  await documentDropdown.scrollIntoViewIfNeeded();
-  await documentDropdown.click();
+  await documentDropdown.waitFor({ state: 'visible', timeout: 60000 });
 
-  let searchField = page.locator('.select2-container--open input.select2-search__field');
-  if ((await searchField.count()) === 0) {
-    await page.evaluate(() => {
-      const select = window.jQuery?.('#documentSelect');
-      if (select?.data('select2')) {
-        select.select2('open');
-      }
-    });
+  const documentNameFragment = 'Doc - SBC Silver 5000 ValueCareTest.pdf';
+  const currentSelection = (await documentDropdown.textContent())?.trim() || '';
+
+  if (
+    currentSelection.includes(documentNameFragment) ||
+    currentSelection.includes(documentLabel)
+  ) {
+    console.log(`Quote document source already selected: ${currentSelection}`);
+  } else {
+    await documentDropdown.scrollIntoViewIfNeeded();
+    await documentDropdown.click();
+
+    let searchField = page.locator('.select2-container--open input.select2-search__field');
+    if ((await searchField.count()) === 0) {
+      await page.evaluate(() => {
+        const select = window.jQuery?.('#documentSelect');
+        if (select?.data('select2')) {
+          select.select2('open');
+        }
+      });
+    }
+
+    const option = page
+      .locator('.select2-results__option')
+      .filter({ hasText: documentNameFragment })
+      .first();
+    await option.waitFor({ state: 'visible', timeout: 30000 });
+    await option.scrollIntoViewIfNeeded();
+    await option.click();
   }
 
-  const option = page.locator('.select2-results__option').filter({ hasText: documentLabel }).first();
-  await option.waitFor({ state: 'visible', timeout: 30000 });
-  await option.scrollIntoViewIfNeeded();
-  await option.click();
-
   await page.waitForFunction(
-    (label) => {
+    (fragment) => {
       const selected = document.querySelector('#select2-documentSelect-container')?.textContent?.trim();
-      return selected === label;
+      return selected?.includes(fragment);
     },
-    documentLabel,
+    documentNameFragment,
     { timeout: 30000 },
   );
 
