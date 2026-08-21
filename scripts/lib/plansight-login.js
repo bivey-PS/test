@@ -385,39 +385,28 @@ async function openEmployerGroup(page, employerName = 'Ace Testing') {
   };
 }
 
-async function startNewRfpBasicsTab(page) {
-  console.log('Starting new RFP from employer group');
+async function startMarketingEventBasicsTab(page) {
+  console.log('Starting new Marketing Event from employer group');
 
   const rfpTable = page.locator('#pending-active-pastDue-rfp-table');
   await rfpTable.waitFor({ timeout: 30000 });
   await rfpTable.locator('tbody tr').first().waitFor({ timeout: 30000 });
 
-  const startRfpButton = page
-    .getByRole('button', { name: /Start RFP/i })
-    .or(page.locator('button, a').filter({ hasText: /^Start RFP/i }));
+  const startMarketingEventButton = page
+    .getByRole('button', { name: /Start Marketing Event/i })
+    .or(page.locator('button, a').filter({ hasText: /^Start Marketing Event/i }));
 
-  if (await startRfpButton.first().isVisible().catch(() => false)) {
-    await startRfpButton.first().scrollIntoViewIfNeeded();
-    await startRfpButton.first().click();
+  await startMarketingEventButton.first().waitFor({ state: 'visible', timeout: 30000 });
+  await startMarketingEventButton.first().scrollIntoViewIfNeeded();
+  await startMarketingEventButton.first().click();
 
-    const startNewRfp = page
-      .getByRole('menuitem', { name: /Start New RFP/i })
-      .or(page.getByRole('link', { name: /Start New RFP/i }))
-      .or(page.locator('a, button, li').filter({ hasText: /^Start New RFP$/i }));
+  const startMarketingEventMenuItem = page
+    .getByRole('menuitem', { name: /Start Marketing Event/i })
+    .or(page.getByRole('link', { name: /Start Marketing Event/i }))
+    .or(page.locator('a, button, li').filter({ hasText: /^Start Marketing Event$/i }));
 
-    await startNewRfp.first().waitFor({ state: 'visible', timeout: 10000 });
-    await startNewRfp.first().click();
-  } else {
-    const openWizard = rfpTable.getByRole('link', { name: 'Open RFP Wizard', exact: true }).first();
-    if ((await openWizard.count()) > 0) {
-      await openWizard.scrollIntoViewIfNeeded();
-      await openWizard.evaluate((element) => element.click());
-    } else {
-      const draftBasics = rfpTable.locator('a[href*="#rfpBuilderBasics"]').first();
-      await draftBasics.waitFor({ state: 'attached', timeout: 30000 });
-      await draftBasics.evaluate((element) => element.click());
-    }
-  }
+  await startMarketingEventMenuItem.first().waitFor({ state: 'visible', timeout: 10000 });
+  await startMarketingEventMenuItem.first().click();
 
   await page.waitForURL(/#rfpBuilderBasics/, { timeout: 60000 });
   await waitForPageReady(page, 120000);
@@ -428,7 +417,7 @@ async function startNewRfpBasicsTab(page) {
   }
 
   if (!page.url().includes('#rfpBuilderBasics')) {
-    throw new Error('Basics wizard URL did not load after Start New RFP');
+    throw new Error('Basics wizard URL did not load after Start Marketing Event');
   }
 
   const basicsMarkers = [
@@ -447,7 +436,7 @@ async function startNewRfpBasicsTab(page) {
   }
 
   if (!basicsFound) {
-    throw new Error('Basics tab or Basics wizard fields did not appear after Start New RFP');
+    throw new Error('Basics tab or Basics wizard fields did not appear after Start Marketing Event');
   }
 
   const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-rfp-wizard-basics.png');
@@ -1759,7 +1748,7 @@ module.exports = {
   navigateToEmployers,
   openAceTestingEmployer,
   openEmployerGroup,
-  startNewRfpBasicsTab,
+  startMarketingEventBasicsTab,
   saveRfpBasicsAndContinue,
   setRfpBasicsName,
   buildAutomationRfpName,

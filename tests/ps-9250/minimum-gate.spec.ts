@@ -54,7 +54,7 @@ test.describe('PS-9250 Minimum Gate', () => {
     expect(employer.employerUrl).toMatch(/#groupUpdate/);
   });
 
-  test('S3.1 Start new RFP opens Basics tab', async ({ page }) => {
+  test('S3.1 Start Marketing Event opens Basics and continues', async ({ page }) => {
     const login = require('../../scripts/lib/plansight-login');
     await login.login(page, {
       baseUrl: BASE_URL,
@@ -65,7 +65,7 @@ test.describe('PS-9250 Minimum Gate', () => {
 
     await login.navigateToEmployers(page);
     await login.openEmployerGroup(page, EMPLOYER_NAME);
-    const wizard = await login.startNewRfpBasicsTab(page);
-    expect(wizard.wizardUrl).toBeTruthy();
+    const basics = await login.startMarketingEventBasicsTab(page);
+    expect(basics.wizardUrl).toContain('#rfpBuilderBasics');
   });
 });

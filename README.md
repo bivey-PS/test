@@ -64,8 +64,7 @@ The PS-9250 Minimum Gate suite verifies:
 - **S1.2** Valid broker login → lands in app
 - **S2.1** Group List loads
 - **S2.2** Open an existing group → loads without error
-- **S3.1** Start new RFP → Basics tab opens
-- **S3.2** RFP Basics → set **RFP Name** to `Ace Testing {YYYY-MM-DD} Automation {N}` (auto-incremented run counter) → Save & Continue
+- **S3.1** Start Marketing Event → set **RFP Name** to `Ace Testing {YYYY-MM-DD} Automation {N}` → Save & Continue
 - **S3.3** Choose Benefit Types → Medical, Vision, Dental (Marketing) → Save & Continue
 - **S3.3.1** Community Rated Plans → answer **No** on both questions → skip census → Save & Continue
 - **S3.4** Documents for Carrier Quoting → Save & Continue

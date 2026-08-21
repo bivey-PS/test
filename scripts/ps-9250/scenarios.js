@@ -3,7 +3,7 @@ const {
   verifyDashboard,
   navigateToEmployers,
   openEmployerGroup,
-  startNewRfpBasicsTab,
+  startMarketingEventBasicsTab,
   saveRfpBasicsAndContinue,
   saveBenefitTypesAndContinue,
   saveCommunityRatedPlansAndContinue,
@@ -45,13 +45,8 @@ const SCENARIOS = [
   },
   {
     id: 'S3.1',
-    name: 'Start new RFP → Basics tab opens',
+    name: 'Start Marketing Event → set RFP Name → Save & Continue',
     run: runS31,
-  },
-  {
-    id: 'S3.2',
-    name: 'RFP Basics → set RFP Name to Ace Testing {date} Automation {run#} → Save & Continue',
-    run: runS32,
   },
   {
     id: 'S3.3',
@@ -156,27 +151,21 @@ async function runS22(page, _context, options) {
   };
 }
 
-async function runS31(page) {
-  const wizard = await startNewRfpBasicsTab(page);
-  const { extractRfpIdFromUrl } = require('../lib/plansight-login');
-  currentRfpId = extractRfpIdFromUrl(wizard.wizardUrl);
-
-  return {
-    wizardUrl: wizard.wizardUrl,
-    rfpId: currentRfpId,
-    screenshotPath: wizard.screenshotPath,
-  };
-}
-
-async function runS32(page, _context, options) {
+async function runS31(page, _context, options) {
   const runNumber = getNextRunNumber();
+  const basics = await startMarketingEventBasicsTab(page);
+  const { extractRfpIdFromUrl } = require('../lib/plansight-login');
+  currentRfpId = extractRfpIdFromUrl(basics.wizardUrl);
+
   const wizard = await saveRfpBasicsAndContinue(page, options.employerName, runNumber);
   currentRfpName = wizard.rfpName;
 
   return {
     wizardUrl: wizard.wizardUrl,
+    rfpId: currentRfpId,
     rfpName: wizard.rfpName,
     runNumber: wizard.runNumber,
+    basicsScreenshotPath: basics.screenshotPath,
     screenshotPath: wizard.screenshotPath,
   };
 }
