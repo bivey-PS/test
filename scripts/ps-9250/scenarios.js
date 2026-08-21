@@ -27,6 +27,15 @@ let currentRfpId = null;
 let currentMatchedRfpName = null;
 let currentRfpName = null;
 
+function trackRfpFromUrl(url) {
+  const { extractRfpIdFromUrl } = require('../lib/plansight-login');
+  const rfpId = extractRfpIdFromUrl(url);
+  if (rfpId) {
+    currentRfpId = rfpId;
+  }
+  return currentRfpId;
+}
+
 const SCENARIOS = [
   {
     id: 'S1.2',
@@ -80,7 +89,7 @@ const SCENARIOS = [
   },
   {
     id: 'S3.8',
-    name: 'Request for Proposals → row for Ace Testing {current date}*',
+    name: 'Request for Proposals → row for created RFP name',
     run: runS38,
   },
   {
@@ -154,11 +163,11 @@ async function runS22(page, _context, options) {
 async function runS31(page, _context, options) {
   const runNumber = getNextRunNumber();
   const basics = await startMarketingEventBasicsTab(page);
-  const { extractRfpIdFromUrl } = require('../lib/plansight-login');
-  currentRfpId = extractRfpIdFromUrl(basics.wizardUrl);
 
   const wizard = await saveRfpBasicsAndContinue(page, options.employerName, runNumber);
   currentRfpName = wizard.rfpName;
+  trackRfpFromUrl(wizard.wizardUrl);
+  trackRfpFromUrl(page.url());
 
   return {
     wizardUrl: wizard.wizardUrl,
@@ -172,45 +181,55 @@ async function runS31(page, _context, options) {
 
 async function runS33(page) {
   const wizard = await saveBenefitTypesAndContinue(page);
+  trackRfpFromUrl(wizard.wizardUrl);
 
   return {
     wizardUrl: wizard.wizardUrl,
+    rfpId: currentRfpId,
     screenshotPath: wizard.screenshotPath,
   };
 }
 
 async function runS331(page) {
   const wizard = await saveCommunityRatedPlansAndContinue(page);
+  trackRfpFromUrl(wizard.wizardUrl);
 
   return {
     wizardUrl: wizard.wizardUrl,
+    rfpId: currentRfpId,
     screenshotPath: wizard.screenshotPath,
   };
 }
 
 async function runS34(page) {
   const wizard = await saveDocumentsForCarrierQuotingAndContinue(page);
+  trackRfpFromUrl(wizard.wizardUrl);
 
   return {
     wizardUrl: wizard.wizardUrl,
+    rfpId: currentRfpId,
     screenshotPath: wizard.screenshotPath,
   };
 }
 
 async function runS35(page) {
   const wizard = await saveMedicalPlanDetailsAndContinue(page);
+  trackRfpFromUrl(wizard.wizardUrl);
 
   return {
     wizardUrl: wizard.wizardUrl,
+    rfpId: currentRfpId,
     screenshotPath: wizard.screenshotPath,
   };
 }
 
 async function runS36(page) {
   const quotes = await selectMedicalFromDistributionListDropdown(page);
+  trackRfpFromUrl(quotes.quotesUrl);
 
   return {
     quotesUrl: quotes.quotesUrl,
+    rfpId: currentRfpId,
     screenshotPath: quotes.screenshotPath,
     verifiedTabs: quotes.verifiedTabs,
   };
@@ -227,18 +246,24 @@ async function runS37(page, _context, options) {
 }
 
 async function runS38(page, _context, options) {
+  if (!currentRfpName) {
+    throw new Error('Created RFP name was not captured from S3.1');
+  }
+
   const rfpRow = await verifyRequestForProposalsRfpRow(
     page,
     options.employerName,
     new Date(),
     currentRfpId,
+    currentRfpName,
   );
   currentMatchedRfpName = rfpRow.matchedName;
 
   return {
     expectedPrefix: rfpRow.expectedPrefix,
+    expectedRfpName: currentRfpName,
     matchedName: rfpRow.matchedName,
-    rfpId: rfpRow.rfpId,
+    rfpId: rfpRow.rfpId || currentRfpId,
     screenshotPath: rfpRow.screenshotPath,
   };
 }

@@ -1281,9 +1281,14 @@ async function verifyRequestForProposalsRfpRow(
   employerName = 'Ace Testing',
   date = new Date(),
   rfpId = null,
+  expectedRfpName = null,
 ) {
   const expectedPrefixes = getEmployerDateRfpNamePrefixes(employerName, date);
-  if (rfpId) {
+  if (expectedRfpName) {
+    console.log(
+      `Verifying Request for Proposals row for created RFP: ${expectedRfpName}${rfpId ? ` (${rfpId})` : ''}`,
+    );
+  } else if (rfpId) {
     console.log(
       `Verifying Request for Proposals row for RFP ${rfpId} and name matching: ${expectedPrefixes.map((prefix) => `${prefix}*`).join(' or ')}`,
     );
@@ -1326,7 +1331,44 @@ async function verifyRequestForProposalsRfpRow(
     const maxPages = 10;
 
     for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {
-      if (rfpId) {
+      rfpNames = (await rfpTable.locator('tbody tr .name').allTextContents())
+        .map((name) => name.trim())
+        .filter(Boolean);
+
+      if (expectedRfpName) {
+        matchedName = await rfpTable.evaluate(
+          (table, { currentRfpId, expectedName }) => {
+            for (const row of table.querySelectorAll('tbody tr')) {
+              const name = row.querySelector('.name')?.textContent?.trim() || '';
+              if (name !== expectedName) {
+                continue;
+              }
+
+              if (!currentRfpId) {
+                return name;
+              }
+
+              const rowLinksRfp = [...row.querySelectorAll('a')].some((anchor) =>
+                anchor.href.includes(`/${currentRfpId}`),
+              );
+              if (rowLinksRfp) {
+                return name;
+              }
+            }
+
+            return null;
+          },
+          { currentRfpId: rfpId, expectedName: expectedRfpName },
+        );
+
+        if (!matchedName) {
+          matchedName = rfpNames.find((name) => name === expectedRfpName) || null;
+        }
+
+        if (matchedName) {
+          break;
+        }
+      } else if (rfpId) {
         matchedName = await rfpTable.evaluate(
           (table, { currentRfpId, currentEmployerName, prefixes }) => {
             for (const row of table.querySelectorAll('tbody tr')) {
@@ -1358,11 +1400,7 @@ async function verifyRequestForProposalsRfpRow(
         }
       }
 
-      rfpNames = (await rfpTable.locator('tbody tr .name').allTextContents())
-        .map((name) => name.trim())
-        .filter(Boolean);
-
-      if (!matchedName) {
+      if (!matchedName && !expectedRfpName) {
         matchedName = rfpNames.find((name) =>
           expectedPrefixes.some((prefix) => name.startsWith(prefix)),
         );
@@ -1382,8 +1420,9 @@ async function verifyRequestForProposalsRfpRow(
   }
 
   if (!matchedName) {
+    const targetLabel = expectedRfpName || expectedPrefixes.map((prefix) => `${prefix}*`).join('" or "');
     throw new Error(
-      `No Request for Proposals row found matching "${expectedPrefixes.map((prefix) => `${prefix}*`).join('" or "')}". Found: ${rfpNames.slice(0, 5).join(' | ') || 'none'}`,
+      `No Request for Proposals row found matching "${targetLabel}". Found: ${rfpNames.slice(0, 5).join(' | ') || 'none'}`,
     );
   }
 
@@ -1396,6 +1435,7 @@ async function verifyRequestForProposalsRfpRow(
   return {
     expectedPrefix: expectedPrefixes[0],
     expectedPrefixes,
+    expectedRfpName,
     matchedName,
     rfpId,
     screenshotPath,

@@ -71,7 +71,7 @@ The PS-9250 Minimum Gate suite verifies:
 - **S3.5** Medical Plan Details → Save & go to Distribution
 - **S3.6** Who Gets the RFP? → ellipsis menu → Medical → Quotes tab highlighted (`#gridInit/medical`) with **Vision** and **Dental** subnav tabs
 - **S3.7** Back to employer profile link → employer profile loads
-- **S3.8** Request for Proposals → row for `{employer} {YYYY-MM-DD}*`
+- **S3.8** Request for Proposals → row for the **created RFP name** from S3.1
 - **S3.9** Request for Proposals → click **Name** link to open the RFP
 - **S3.10** RFP Basics → vertical ellipsis menu → **Medical** row
 - **S3.11** Medical Quotes → click **Add Quote +** button
