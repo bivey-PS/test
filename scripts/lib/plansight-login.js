@@ -1113,6 +1113,67 @@ async function submitCreateNewQuoteModal(page) {
   };
 }
 
+async function selectUploadedQuoteDocumentSource(
+  page,
+  documentLabel = 'Aetna National - Doc - SBC Silver 5000 ValueCareTest.pdf',
+) {
+  console.log(`Selecting quote document source: ${documentLabel}`);
+
+  if (!page.url().includes('#planGroupQuoteCreate/medical')) {
+    throw new Error('Expected to be on Quote - Medical create view');
+  }
+
+  await page.getByText('Quote - Medical', { exact: true }).first().waitFor({ state: 'visible', timeout: 60000 });
+  await page.waitForFunction(
+    () => document.querySelector('#documentSelect')?.classList.contains('select2-hidden-accessible'),
+    { timeout: 30000 },
+  );
+
+  const documentDropdown = page.locator('#select2-documentSelect-container');
+  await documentDropdown.waitFor({ state: 'visible', timeout: 30000 });
+  await documentDropdown.scrollIntoViewIfNeeded();
+  await documentDropdown.click();
+
+  let searchField = page.locator('.select2-container--open input.select2-search__field');
+  if ((await searchField.count()) === 0) {
+    await page.evaluate(() => {
+      const select = window.jQuery?.('#documentSelect');
+      if (select?.data('select2')) {
+        select.select2('open');
+      }
+    });
+  }
+
+  const option = page.locator('.select2-results__option').filter({ hasText: documentLabel }).first();
+  await option.waitFor({ state: 'visible', timeout: 30000 });
+  await option.scrollIntoViewIfNeeded();
+  await option.click();
+
+  await page.waitForFunction(
+    (label) => {
+      const selected = document.querySelector('#select2-documentSelect-container')?.textContent?.trim();
+      return selected === label;
+    },
+    documentLabel,
+    { timeout: 30000 },
+  );
+
+  const selectedDocument = await page.evaluate(() =>
+    document.querySelector('#select2-documentSelect-container')?.textContent?.trim(),
+  );
+  console.log(`Selected quote document source: ${selectedDocument}`);
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-quote-document-selected.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved quote document source screenshot: ${screenshotPath}`);
+
+  return {
+    documentLabel: selectedDocument,
+    quoteUrl: page.url(),
+    screenshotPath,
+  };
+}
+
 async function waitForQuoteProcessingAndSaveChanges(page) {
   console.log('Waiting for Plansight AI document processing to complete');
 
@@ -1804,6 +1865,7 @@ module.exports = {
   selectCarrierInCreateNewQuoteModal,
   uploadQuoteDocumentInCreateNewQuoteModal,
   submitCreateNewQuoteModal,
+  selectUploadedQuoteDocumentSource,
   waitForQuoteProcessingAndSaveChanges,
   clickBackToEmployerProfile,
   verifyRequestForProposalsRfpRow,
