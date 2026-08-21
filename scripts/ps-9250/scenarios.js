@@ -110,7 +110,7 @@ const SCENARIOS = [
   },
   {
     id: 'S3.13',
-    name: 'Create New Quote → Click to upload → select doc - sbc silver 5000 Valuecare',
+    name: 'Create New Quote → Click to upload → select Doc - SBC Silver 5000 ValueCareTest.pdf',
     run: runS313,
   },
   {

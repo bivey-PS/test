@@ -1020,7 +1020,7 @@ async function selectCarrierInCreateNewQuoteModal(page, searchText = 'a') {
 
 async function uploadQuoteDocumentInCreateNewQuoteModal(
   page,
-  fileName = 'doc - sbc silver 5000 Valuecare.pdf',
+  fileName = 'Doc - SBC Silver 5000 ValueCareTest.pdf',
 ) {
   console.log(`Uploading quote document via Click to upload: ${fileName}`);
 
@@ -1050,9 +1050,10 @@ async function uploadQuoteDocumentInCreateNewQuoteModal(
     fileName: document.querySelector('#quotesDropzone .dz-filename')?.textContent?.trim(),
   }));
 
-  if (!uploadedFile.fileName?.includes('doc - sbc silver 5000 Valuecare')) {
+  const expectedNameFragment = path.basename(fileName, path.extname(fileName));
+  if (!uploadedFile.fileName?.toLowerCase().includes(expectedNameFragment.toLowerCase())) {
     throw new Error(
-      `Expected uploaded file name to include "doc - sbc silver 5000 Valuecare", got: ${uploadedFile.fileName || 'none'}`,
+      `Expected uploaded file name to include "${expectedNameFragment}", got: ${uploadedFile.fileName || 'none'}`,
     );
   }
 
