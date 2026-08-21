@@ -690,13 +690,22 @@ async function saveCommunityRatedPlansAndContinue(page) {
 async function saveDocumentsForCarrierQuotingAndContinue(page) {
   console.log('Saving Documents for Carrier Quoting and continuing');
 
-  if (!page.url().includes('#rfpBuilderDocuments')) {
-    throw new Error('Expected to be on Documents for Carrier Quoting wizard step');
+  if (!urlHasHashFragment(page, 'rfpBuilderDocuments')) {
+    await waitForUrlMatch(page, hashFragmentPattern('rfpBuilderDocuments'), 60000);
+  }
+
+  await waitForPageReady(page);
+  await waitForWizardBackgroundProcessing(page);
+
+  if (!urlHasHashFragment(page, 'rfpBuilderDocuments')) {
+    throw new Error(
+      `Expected to be on Documents for Carrier Quoting wizard step, got: ${page.url()}`,
+    );
   }
 
   await clickSaveAndContinue(page, hashFragmentPattern('rfpBuilderPlanDetails'));
 
-  if (!page.url().includes('#rfpBuilderPlanDetails')) {
+  if (!urlHasHashFragment(page, 'rfpBuilderPlanDetails')) {
     throw new Error(
       'Did not navigate to Verify Plan Details after saving Documents for Carrier Quoting',
     );
@@ -742,18 +751,10 @@ async function openMedicalPlanDetails(page) {
   }
 }
 
-async function saveMedicalPlanDetailsAndContinue(page) {
-  console.log('Saving Plan Details and continuing through benefit steps to Distribution');
-
-  await openMedicalPlanDetails(page);
-
-  if (!page.url().includes('#rfpBuilderPlanDetails')) {
-    throw new Error('Expected to be on Verify Plan Details wizard step');
-  }
-
+async function continuePlanDetailsToDistribution(page) {
   for (let step = 0; step < 10; step += 1) {
-    if (page.url().includes('#rfpBuilderDistributionList')) {
-      break;
+    if (urlHasHashFragment(page, 'rfpBuilderDistributionList')) {
+      return;
     }
 
     await page
@@ -773,7 +774,7 @@ async function saveMedicalPlanDetailsAndContinue(page) {
 
     if (/Save & go to Distribution/i.test(buttonLabel)) {
       await waitForUrlMatch(page, hashFragmentPattern('rfpBuilderDistributionList'), 120000);
-      break;
+      return;
     }
 
     if (/Save & go to Dental/i.test(buttonLabel)) {
@@ -782,17 +783,26 @@ async function saveMedicalPlanDetailsAndContinue(page) {
       await waitForUrlMatch(page, /planType=vision/, 120000);
     } else {
       await page.waitForTimeout(2000);
-      if (page.url().includes('#rfpBuilderDistributionList')) {
-        break;
-      }
     }
 
     await waitForPageReady(page);
   }
 
-  if (!page.url().includes('#rfpBuilderDistributionList')) {
+  if (!urlHasHashFragment(page, 'rfpBuilderDistributionList')) {
     throw new Error('Did not navigate to Distribution List after saving Plan Details');
   }
+}
+
+async function saveMedicalPlanDetailsAndContinue(page) {
+  console.log('Saving Plan Details and continuing through benefit steps to Distribution');
+
+  await openMedicalPlanDetails(page);
+
+  if (!page.url().includes('#rfpBuilderPlanDetails')) {
+    throw new Error('Expected to be on Verify Plan Details wizard step');
+  }
+
+  await continuePlanDetailsToDistribution(page);
 
   await page.getByText(/Who Gets the RFP\?/i).waitFor({ state: 'visible', timeout: 120000 });
   await page.getByText('Loading...').waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
@@ -811,8 +821,19 @@ async function saveMedicalPlanDetailsAndContinue(page) {
 async function selectMedicalFromDistributionListDropdown(page) {
   console.log('Opening ellipsis menu on Who Gets the RFP and selecting Medical');
 
-  if (!page.url().includes('#rfpBuilderDistributionList')) {
-    throw new Error('Expected to be on Who Gets the RFP (Distribution List) wizard step');
+  if (!urlHasHashFragment(page, 'rfpBuilderDistributionList')) {
+    if (page.url().includes('#rfpBuilderPlanDetails')) {
+      console.log('Resuming Plan Details navigation before Distribution List step');
+      await continuePlanDetailsToDistribution(page);
+    } else {
+      await waitForUrlMatch(page, hashFragmentPattern('rfpBuilderDistributionList'), 60000);
+    }
+  }
+
+  if (!urlHasHashFragment(page, 'rfpBuilderDistributionList')) {
+    throw new Error(
+      `Expected to be on Who Gets the RFP (Distribution List) wizard step, got: ${page.url()}`,
+    );
   }
 
   await page.getByText(/Who Gets the RFP\?/i).waitFor({ state: 'visible', timeout: 120000 });
