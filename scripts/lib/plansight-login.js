@@ -1529,23 +1529,32 @@ async function openRfpFromMarketingTableByName(
   await rfpTable.scrollIntoViewIfNeeded();
   await rfpTable.waitFor({ timeout: 30000 });
 
+  // Prefer exact Name text when available. Playwright string hasText is a
+  // substring match, so "… Automation 1" also matches "… Automation 10".
+  const { exactRfpNamePattern } = require('./rfp-name-match');
   let nameLink;
-  if (rfpId) {
-    nameLink = rfpTable.locator(`tbody tr a[href*="/${rfpId}"]`).first();
-  } else {
+  if (matchedName) {
     nameLink = rfpTable
       .locator('tbody tr')
-      .filter({ has: page.locator('.name', { hasText: matchedName }) })
+      .filter({
+        has: page.locator('.name', { hasText: exactRfpNamePattern(matchedName) }),
+      })
       .locator('a')
       .first();
+  } else {
+    nameLink = rfpTable.locator(`tbody tr a[href*="/${rfpId}"]`).first();
   }
 
   await nameLink.waitFor({ timeout: 30000 });
   await nameLink.scrollIntoViewIfNeeded();
 
   const linkText = (await nameLink.locator('.name').textContent())?.trim() || matchedName;
+  if (matchedName && linkText && linkText !== matchedName) {
+    throw new Error(
+      `RFP Name link text "${linkText}" did not exactly match expected "${matchedName}"`,
+    );
+  }
   await nameLink.evaluate((element) => element.click());
-
   if (rfpId) {
     const escapedRfpId = rfpId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     await page.waitForURL(new RegExp(`${escapedRfpId}.*#`), { timeout: 60000 });
