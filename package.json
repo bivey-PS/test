@@ -1,0 +1,31 @@
+{
+  "name": "workspace",
+  "version": "1.0.0",
+  "description": "Playwright website test automation",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "test:report": "playwright show-report",
+    "test:debug": "playwright test --debug",
+    "automate": "node scripts/website-automation.js",
+    "automate:login": "node scripts/login-automation.js",
+    "automate:login:ui": "HEADED=1 node scripts/login-automation-ui.js",
+    "automate:ps9250:minimum-gate": "BASE_URL=https://test.plansight.com JIRA_TICKET=PS-9250 node scripts/ps-9250/minimum-gate.js",
+    "automate:ps9250:minimum-gate:ui": "BASE_URL=https://test.plansight.com HEADED=1 RECORD_VIDEO=1 JIRA_TICKET=PS-9250 node scripts/ps-9250/minimum-gate.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bivey-ps/test.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/bivey-ps/test/issues"
+  },
+  "homepage": "https://github.com/bivey-ps/test#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.62.1"
+  }
+}
