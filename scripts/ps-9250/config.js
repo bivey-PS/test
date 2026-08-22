@@ -1,3 +1,5 @@
+require('./load-env');
+
 const path = require('path');
 
 const OUTPUT_DIR = path.join(__dirname, '..', '..', 'automation-output');

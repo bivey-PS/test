@@ -5,3 +5,4 @@ node_modules/
 /playwright/.cache/
 /automation-output/
 .env
+scripts/ps-9250/.env

@@ -54,10 +54,17 @@ npm run automate:login:ui
 MFA_CODE=123456 npm run automate:ps9250:minimum-gate
 ```
 
-PS-9250 defaults to broker user `ps.automation.broker.ca.admin@plansight.com` on `BASE_URL=https://test.plansight.com`. Credentials are built into the PS-9250 config; override with `LOGIN_USERNAME` / `LOGIN_PASSWORD` if needed. Provide `MFA_CODE` on first login or when the saved session expires.
+PS-9250 defaults to broker user `ps.automation.broker.ca.admin@plansight.com` on `BASE_URL=https://test.plansight.com`. Override credentials and environment via `scripts/ps-9250/.env` or shell env vars. Provide `MFA_CODE` on first login or when the saved session expires.
 
 ```bash
-BASE_URL=https://test.plansight.com EMPLOYER_NAME="Ace Testing" MFA_CODE=123456 npm run automate:ps9250:minimum-gate
+# One-time setup: copy the scaffold and edit your values
+cp scripts/ps-9250/.env.example scripts/ps-9250/.env
+
+# Run using .env values
+npm run automate:ps9250:minimum-gate
+
+# Override at run time (shell vars beat .env)
+BASE_URL=https://staging.plansight.com MFA_CODE=123456 npm run automate:ps9250:minimum-gate
 ```
 
 The PS-9250 Minimum Gate suite verifies:
@@ -132,6 +139,8 @@ scripts/
   lib/plansight-credentials.js # Shared broker login defaults (b.ivey@plansight.com)
   lib/plansight-login.js # Shared login + dashboard verification helpers
   ps-9250/               # PS-9250 Minimum Gate automation suite
+    .env.example         # Scaffold — copy to .env for local runs
+    load-env.js          # Loads scripts/ps-9250/.env via dotenv
   website-automation.js  # General automation script
   login-automation.js    # Plansight Auth0 login script
   login-automation-ui.js # Headed UI demo with MP4 recording
