@@ -1291,42 +1291,53 @@ async function closeQuoteMedicalPage(page) {
   }
 
   await quoteHeader.waitFor({ state: 'visible', timeout: 30000 });
+  await page.getByRole('button', { name: /Save Changes/i }).waitFor({ state: 'visible', timeout: 30000 });
 
-  const closeSelectors = [
-    '.modal-header button.close',
-    '.modal-header .close',
-    'button[aria-label="Close"]',
-    '[data-dismiss="modal"]',
-  ];
+  const clicked = await page.evaluate(() => {
+    const saveButton = [...document.querySelectorAll('button')].find(
+      (button) => /save changes/i.test(button.textContent || '') && button.getBoundingClientRect().width > 0,
+    );
 
-  let closed = false;
-  for (const selector of closeSelectors) {
-    const closeButton = page.locator(selector).first();
-    if ((await closeButton.count()) > 0 && (await closeButton.isVisible().catch(() => false))) {
-      await closeButton.scrollIntoViewIfNeeded();
-      await closeButton.click();
-      closed = true;
-      break;
+    if (!saveButton) {
+      return false;
     }
-  }
 
-  if (!closed) {
-    const headerClose = page
-      .locator('button, a')
-      .filter({ has: page.locator('[data-icon="xmark"], [data-icon="times"], .fa-times, .fa-xmark') })
-      .first();
+    let container = saveButton.parentElement;
+    for (let depth = 0; depth < 8 && container; depth += 1) {
+      const closeCandidates = [...container.querySelectorAll('button, a')].filter((element) => {
+        if (element === saveButton) {
+          return false;
+        }
 
-    if ((await headerClose.count()) > 0 && (await headerClose.isVisible().catch(() => false))) {
-      await headerClose.click();
-      closed = true;
+        const rect = element.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) {
+          return false;
+        }
+
+        const text = (element.textContent || '').trim();
+        const hasCloseIcon = Boolean(
+          element.querySelector('[data-icon="xmark"], [data-icon="times"], .fa-times, .fa-xmark'),
+        );
+
+        return text === '×' || text === 'X' || text === '✕' || hasCloseIcon || element.classList.contains('close');
+      });
+
+      if (closeCandidates.length > 0) {
+        closeCandidates.sort(
+          (left, right) => right.getBoundingClientRect().right - left.getBoundingClientRect().right,
+        );
+        closeCandidates[0].click();
+        return true;
+      }
+
+      container = container.parentElement;
     }
-  }
 
-  if (!closed) {
-    const xButton = page.getByRole('button', { name: 'Close' }).or(page.locator('button.close')).first();
-    await xButton.waitFor({ state: 'visible', timeout: 30000 });
-    await xButton.scrollIntoViewIfNeeded();
-    await xButton.click();
+    return false;
+  });
+
+  if (!clicked) {
+    throw new Error('Could not find visible close button on Quote - Medical page');
   }
 
   console.log('Clicked close button on Quote - Medical page');
