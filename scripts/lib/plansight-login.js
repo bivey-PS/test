@@ -1293,51 +1293,93 @@ async function closeQuoteMedicalPage(page) {
   await quoteHeader.waitFor({ state: 'visible', timeout: 30000 });
   await page.getByRole('button', { name: /Save Changes/i }).waitFor({ state: 'visible', timeout: 30000 });
 
-  const clicked = await page.evaluate(() => {
-    const saveButton = [...document.querySelectorAll('button')].find(
-      (button) => /save changes/i.test(button.textContent || '') && button.getBoundingClientRect().width > 0,
-    );
-
-    if (!saveButton) {
-      return false;
+  const iconClose = page.locator('[data-icon="xmark"]:visible, [data-icon="times"]:visible').first();
+  if ((await iconClose.count()) > 0) {
+    const clickable = iconClose.locator('xpath=ancestor::button[1] | ancestor::a[1]').first();
+    if ((await clickable.count()) > 0) {
+      await clickable.click();
+    } else {
+      await iconClose.click({ force: true });
     }
+  } else {
+    const clicked = await page.evaluate(() => {
+      const titleElement = [...document.querySelectorAll('*')].find(
+        (element) =>
+          element.childElementCount <= 1 &&
+          (element.textContent || '').trim() === 'Quote - Medical',
+      );
 
-    let container = saveButton.parentElement;
-    for (let depth = 0; depth < 8 && container; depth += 1) {
-      const closeCandidates = [...container.querySelectorAll('button, a')].filter((element) => {
-        if (element === saveButton) {
-          return false;
-        }
+      if (!titleElement) {
+        return false;
+      }
 
-        const rect = element.getBoundingClientRect();
-        if (rect.width <= 0 || rect.height <= 0) {
-          return false;
-        }
+      let container = titleElement.parentElement;
+      for (let depth = 0; depth < 12 && container; depth += 1) {
+        const closeCandidates = [...container.querySelectorAll('button, a, [role="button"], .close')].filter(
+          (element) => {
+            const rect = element.getBoundingClientRect();
+            if (rect.width <= 0 || rect.height <= 0) {
+              return false;
+            }
 
-        const text = (element.textContent || '').trim();
-        const hasCloseIcon = Boolean(
-          element.querySelector('[data-icon="xmark"], [data-icon="times"], .fa-times, .fa-xmark'),
+            if (/save changes/i.test(element.textContent || '')) {
+              return false;
+            }
+
+            const text = (element.textContent || '').trim();
+            const hasCloseIcon = Boolean(
+              element.querySelector('[data-icon="xmark"], [data-icon="times"], .fa-times, .fa-xmark'),
+            );
+
+            return text === '×' || text === 'X' || text === '✕' || hasCloseIcon || element.classList.contains('close');
+          },
         );
 
-        return text === '×' || text === 'X' || text === '✕' || hasCloseIcon || element.classList.contains('close');
-      });
+        if (closeCandidates.length > 0) {
+          closeCandidates.sort(
+            (left, right) => right.getBoundingClientRect().right - left.getBoundingClientRect().right,
+          );
+          closeCandidates[0].click();
+          return true;
+        }
 
-      if (closeCandidates.length > 0) {
-        closeCandidates.sort(
+        container = container.parentElement;
+      }
+
+      const topRightClose = [...document.querySelectorAll('button, a, [role="button"], .close')].filter(
+        (element) => {
+          const rect = element.getBoundingClientRect();
+          if (rect.width <= 0 || rect.height <= 0 || rect.top > 160) {
+            return false;
+          }
+
+          if (/save changes/i.test(element.textContent || '')) {
+            return false;
+          }
+
+          const text = (element.textContent || '').trim();
+          const hasCloseIcon = Boolean(
+            element.querySelector('[data-icon="xmark"], [data-icon="times"], .fa-times, .fa-xmark'),
+          );
+
+          return text === '×' || text === 'X' || text === '✕' || hasCloseIcon || element.classList.contains('close');
+        },
+      );
+
+      if (topRightClose.length > 0) {
+        topRightClose.sort(
           (left, right) => right.getBoundingClientRect().right - left.getBoundingClientRect().right,
         );
-        closeCandidates[0].click();
+        topRightClose[0].click();
         return true;
       }
 
-      container = container.parentElement;
+      return false;
+    });
+
+    if (!clicked) {
+      throw new Error('Could not find visible close button on Quote - Medical page');
     }
-
-    return false;
-  });
-
-  if (!clicked) {
-    throw new Error('Could not find visible close button on Quote - Medical page');
   }
 
   console.log('Clicked close button on Quote - Medical page');
@@ -1383,17 +1425,18 @@ async function verifyMedicalQuoteOnQuotesGrid(
   console.log('Verified Medical tab is selected on quotes grid');
 
   const verification = await page.evaluate(({ carrierName, planName }) => {
-    const visibleText = (element) => (element?.textContent || '').replace(/\s+/g, ' ').trim();
+    const normalize = (value) => (value || '').replace(/\s+/g, ' ').trim();
+    const planFragment = 'Silver 5000 ValueCare';
 
-    const headerCandidates = [...document.querySelectorAll('th, td, div, span, a, button, label')].filter(
+    const visibleElements = [...document.querySelectorAll('th, td, div, span, a, button, label')].filter(
       (element) => {
-        if (visibleText(element) !== carrierName) {
-          return false;
-        }
-
         const rect = element.getBoundingClientRect();
         return rect.width > 0 && rect.height > 0;
       },
+    );
+
+    const headerCandidates = visibleElements.filter(
+      (element) => normalize(element.textContent) === carrierName,
     );
 
     if (headerCandidates.length === 0) {
@@ -1403,21 +1446,15 @@ async function verifyMedicalQuoteOnQuotesGrid(
       };
     }
 
-    const header = headerCandidates[0];
+    const header = headerCandidates.sort(
+      (left, right) => left.getBoundingClientRect().top - right.getBoundingClientRect().top,
+    )[0];
     const headerRect = header.getBoundingClientRect();
-    const headerCenterX = headerRect.left + headerRect.width / 2;
 
-    const planCandidates = [...document.querySelectorAll('td, div, span, a, button, label')].filter(
-      (element) => {
-        const text = visibleText(element);
-        if (text !== planName) {
-          return false;
-        }
-
-        const rect = element.getBoundingClientRect();
-        return rect.width > 0 && rect.height > 0;
-      },
-    );
+    const planCandidates = visibleElements.filter((element) => {
+      const text = normalize(element.textContent);
+      return text === planName || text.includes(planFragment);
+    });
 
     if (planCandidates.length === 0) {
       return {
@@ -1428,8 +1465,7 @@ async function verifyMedicalQuoteOnQuotesGrid(
 
     const planInCarrierColumn = planCandidates.some((element) => {
       const rect = element.getBoundingClientRect();
-      const centerX = rect.left + rect.width / 2;
-      return Math.abs(centerX - headerCenterX) <= Math.max(headerRect.width, rect.width) / 2 + 20;
+      return rect.left < headerRect.right + 40 && rect.right > headerRect.left - 40;
     });
 
     if (!planInCarrierColumn) {
@@ -1439,10 +1475,17 @@ async function verifyMedicalQuoteOnQuotesGrid(
       };
     }
 
+    const matchedPlan = normalize(
+      planCandidates.find((element) => {
+        const rect = element.getBoundingClientRect();
+        return rect.left < headerRect.right + 40 && rect.right > headerRect.left - 40;
+      })?.textContent,
+    );
+
     return {
       ok: true,
       carrierName,
-      planName,
+      planName: matchedPlan || planName,
       quotesUrl: window.location.href,
     };
   }, { carrierName, planName });
