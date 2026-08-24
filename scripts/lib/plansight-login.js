@@ -1041,6 +1041,14 @@ async function uploadQuoteDocumentInCreateNewQuoteModal(
     throw new Error(`Upload fixture not found: ${fixturePath}`);
   }
 
+  const fixtureSizeBytes = fs.statSync(fixturePath).size;
+  const minimumFixtureSizeBytes = 500;
+  if (fixtureSizeBytes < minimumFixtureSizeBytes) {
+    throw new Error(
+      `Upload fixture "${fileName}" is only ${fixtureSizeBytes} bytes. Expected at least ${minimumFixtureSizeBytes} bytes with real SBC content.`,
+    );
+  }
+
   const dropzone = dialog.locator('#quotesDropzone');
   await dropzone.waitFor({ state: 'visible', timeout: 30000 });
   await dropzone.getByText('Click to upload').waitFor({ state: 'visible', timeout: 30000 });
@@ -1113,78 +1121,7 @@ async function submitCreateNewQuoteModal(page) {
   };
 }
 
-async function selectUploadedQuoteDocumentSource(
-  page,
-  documentLabel = 'Aetna National - Doc - SBC Silver 5000 ValueCareTest.pdf',
-) {
-  console.log(`Selecting quote document source: ${documentLabel}`);
-
-  if (!page.url().includes('#planGroupQuoteCreate/medical')) {
-    throw new Error('Expected to be on Quote - Medical create view');
-  }
-
-  await page.getByText('Quote - Medical', { exact: true }).first().waitFor({ state: 'visible', timeout: 60000 });
-
-  const documentDropdown = page.locator('#select2-documentSelect-container');
-  await documentDropdown.waitFor({ state: 'visible', timeout: 60000 });
-
-  const documentNameFragment = 'Doc - SBC Silver 5000 ValueCareTest.pdf';
-  const currentSelection = (await documentDropdown.textContent())?.trim() || '';
-
-  if (
-    currentSelection.includes(documentNameFragment) ||
-    currentSelection.includes(documentLabel)
-  ) {
-    console.log(`Quote document source already selected: ${currentSelection}`);
-  } else {
-    await documentDropdown.scrollIntoViewIfNeeded();
-    await documentDropdown.click();
-
-    let searchField = page.locator('.select2-container--open input.select2-search__field');
-    if ((await searchField.count()) === 0) {
-      await page.evaluate(() => {
-        const select = window.jQuery?.('#documentSelect');
-        if (select?.data('select2')) {
-          select.select2('open');
-        }
-      });
-    }
-
-    const option = page
-      .locator('.select2-results__option')
-      .filter({ hasText: documentNameFragment })
-      .first();
-    await option.waitFor({ state: 'visible', timeout: 30000 });
-    await option.scrollIntoViewIfNeeded();
-    await option.click();
-  }
-
-  await page.waitForFunction(
-    (fragment) => {
-      const selected = document.querySelector('#select2-documentSelect-container')?.textContent?.trim();
-      return selected?.includes(fragment);
-    },
-    documentNameFragment,
-    { timeout: 30000 },
-  );
-
-  const selectedDocument = await page.evaluate(() =>
-    document.querySelector('#select2-documentSelect-container')?.textContent?.trim(),
-  );
-  console.log(`Selected quote document source: ${selectedDocument}`);
-
-  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-quote-document-selected.png');
-  await page.screenshot({ path: screenshotPath, fullPage: false });
-  console.log(`Saved quote document source screenshot: ${screenshotPath}`);
-
-  return {
-    documentLabel: selectedDocument,
-    quoteUrl: page.url(),
-    screenshotPath,
-  };
-}
-
-async function waitForQuoteProcessingAndSaveChanges(page) {
+async function waitForQuoteProcessingComplete(page) {
   console.log('Waiting for Plansight AI document processing to complete');
 
   if (!page.url().includes('#planGroupQuoteCreate/medical')) {
@@ -1219,8 +1156,101 @@ async function waitForQuoteProcessingAndSaveChanges(page) {
     'Detected completion message: Plansight processing completed. Fill the quote using a source below.',
   );
 
-  console.log('Waiting 3 seconds before Save Changes to avoid race with processing completion');
+  console.log('Waiting 3 seconds after processing completion before document selection');
   await page.waitForTimeout(3000);
+
+  return { sawProcessing };
+}
+
+async function assertQuoteDocumentPreviewReady(page) {
+  const fileNotFound = page.getByText('The selected file could not be found', { exact: true });
+  const isVisible = await fileNotFound.isVisible().catch(() => false);
+  if (isVisible) {
+    throw new Error('Document preview failed: The selected file could not be found');
+  }
+
+  console.log('Document preview loaded without file-not-found error');
+}
+
+async function assertNoQuoteErrors(page) {
+  const errorGettingQuote = page.getByText('Error getting quote', { exact: true });
+  if (await errorGettingQuote.isVisible().catch(() => false)) {
+    throw new Error('Quote page showed: Error getting quote');
+  }
+}
+
+async function selectUploadedQuoteDocumentSource(
+  page,
+  documentLabel = 'Aetna National - Doc - SBC Silver 5000 ValueCareTest.pdf',
+) {
+  console.log(`Selecting quote document source: ${documentLabel}`);
+
+  if (!page.url().includes('#planGroupQuoteCreate/medical')) {
+    throw new Error('Expected to be on Quote - Medical create view');
+  }
+
+  await page.getByText('Quote - Medical', { exact: true }).first().waitFor({ state: 'visible', timeout: 60000 });
+
+  const documentDropdown = page.locator('#select2-documentSelect-container');
+  await documentDropdown.waitFor({ state: 'visible', timeout: 60000 });
+
+  const documentNameFragment = 'Doc - SBC Silver 5000 ValueCareTest.pdf';
+
+  await documentDropdown.scrollIntoViewIfNeeded();
+  await documentDropdown.click();
+
+  let searchField = page.locator('.select2-container--open input.select2-search__field');
+  if ((await searchField.count()) === 0) {
+    await page.evaluate(() => {
+      const select = window.jQuery?.('#documentSelect');
+      if (select?.data('select2')) {
+        select.select2('open');
+      }
+    });
+  }
+
+  const option = page
+    .locator('.select2-results__option')
+    .filter({ hasText: documentNameFragment })
+    .first();
+  await option.waitFor({ state: 'visible', timeout: 30000 });
+  await option.scrollIntoViewIfNeeded();
+  await option.click();
+
+  await page.waitForFunction(
+    (fragment) => {
+      const selected = document.querySelector('#select2-documentSelect-container')?.textContent?.trim();
+      return selected?.includes(fragment);
+    },
+    documentNameFragment,
+    { timeout: 30000 },
+  );
+
+  const fileNotFound = page.getByText('The selected file could not be found', { exact: true });
+  await fileNotFound.waitFor({ state: 'hidden', timeout: 120000 }).catch(async () => {
+    throw new Error('Document preview failed: The selected file could not be found');
+  });
+
+  await assertQuoteDocumentPreviewReady(page);
+
+  const selectedDocument = await page.evaluate(() =>
+    document.querySelector('#select2-documentSelect-container')?.textContent?.trim(),
+  );
+  console.log(`Selected quote document source: ${selectedDocument}`);
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-quote-document-selected.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved quote document source screenshot: ${screenshotPath}`);
+
+  return {
+    documentLabel: selectedDocument,
+    quoteUrl: page.url(),
+    screenshotPath,
+  };
+}
+
+async function saveQuoteChanges(page) {
+  await assertNoQuoteErrors(page);
 
   const saveButton = page.getByRole('button', { name: /Save Changes/i });
   await saveButton.waitFor({ state: 'visible', timeout: 30000 });
@@ -1230,6 +1260,7 @@ async function waitForQuoteProcessingAndSaveChanges(page) {
 
   await waitForPageReady(page);
   await page.getByText('Loading...').waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
+  await assertNoQuoteErrors(page);
 
   const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-quote-save-changes.png');
   await page.screenshot({ path: screenshotPath, fullPage: false });
@@ -1237,8 +1268,20 @@ async function waitForQuoteProcessingAndSaveChanges(page) {
 
   return {
     quoteUrl: page.url(),
-    sawProcessing,
     screenshotPath,
+  };
+}
+
+async function waitForQuoteProcessingAndSaveChanges(page) {
+  const processing = await waitForQuoteProcessingComplete(page);
+  const document = await selectUploadedQuoteDocumentSource(page);
+  const saved = await saveQuoteChanges(page);
+
+  return {
+    quoteUrl: saved.quoteUrl,
+    sawProcessing: processing.sawProcessing,
+    documentLabel: document.documentLabel,
+    screenshotPath: saved.screenshotPath,
   };
 }
 
@@ -1875,7 +1918,9 @@ module.exports = {
   selectCarrierInCreateNewQuoteModal,
   uploadQuoteDocumentInCreateNewQuoteModal,
   submitCreateNewQuoteModal,
+  waitForQuoteProcessingComplete,
   selectUploadedQuoteDocumentSource,
+  saveQuoteChanges,
   waitForQuoteProcessingAndSaveChanges,
   clickBackToEmployerProfile,
   verifyRequestForProposalsRfpRow,
