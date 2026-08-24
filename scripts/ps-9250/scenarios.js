@@ -21,6 +21,7 @@ const {
   waitForQuoteProcessingComplete,
   selectUploadedQuoteDocumentSource,
   saveQuoteChanges,
+  verifyMedicalQuoteOnQuotesGrid,
   waitForQuoteProcessingAndSaveChanges,
   isLoggedIn,
 } = require('../lib/plansight-login');
@@ -129,6 +130,11 @@ const SCENARIOS = [
     id: 'S3.15',
     name: 'Quote - Medical → wait for AI processing → select document → Save Changes',
     run: runS315,
+  },
+  {
+    id: 'S3.16',
+    name: 'Medical quotes grid → Medical tab selected → Aetna National column → 1 - Silver 5000 ValueCare',
+    run: runS316,
   },
 ];
 
@@ -348,6 +354,17 @@ async function runS315(page) {
     sawProcessing: processing.sawProcessing,
     documentLabel: document.documentLabel,
     screenshotPath: saved.screenshotPath,
+  };
+}
+
+async function runS316(page) {
+  const grid = await verifyMedicalQuoteOnQuotesGrid(page);
+
+  return {
+    quotesUrl: grid.quotesUrl,
+    carrierName: grid.carrierName,
+    planName: grid.planName,
+    screenshotPath: grid.screenshotPath,
   };
 }
 

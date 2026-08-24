@@ -1262,12 +1262,121 @@ async function saveQuoteChanges(page) {
   await page.getByText('Loading...').waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
   await assertNoQuoteErrors(page);
 
+  await page.waitForURL(/#gridInit\/medical/, { timeout: 120000 }).catch(() => {});
+
   const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-quote-save-changes.png');
   await page.screenshot({ path: screenshotPath, fullPage: false });
   console.log(`Saved quote Save Changes screenshot: ${screenshotPath}`);
 
   return {
     quoteUrl: page.url(),
+    screenshotPath,
+  };
+}
+
+async function verifyMedicalQuoteOnQuotesGrid(
+  page,
+  {
+    carrierName = 'Aetna National',
+    planName = '1 - Silver 5000 ValueCare',
+  } = {},
+) {
+  console.log(
+    `Verifying Medical quotes grid on #gridInit/medical for ${carrierName} column and plan "${planName}"`,
+  );
+
+  await page.waitForURL(/#gridInit\/medical/, { timeout: 120000 });
+  await waitForPageReady(page);
+  await page.getByText('Loading...').waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
+
+  const currentUrl = page.url();
+  if (!currentUrl.includes('#gridInit/medical')) {
+    throw new Error(`Expected URL to include #gridInit/medical, got: ${currentUrl}`);
+  }
+
+  const medicalTab = page.locator('.subnav-tab.medical.active-tab');
+  await medicalTab.waitFor({ state: 'visible', timeout: 30000 });
+  console.log('Verified Medical tab is selected on quotes grid');
+
+  const verification = await page.evaluate(({ carrierName, planName }) => {
+    const visibleText = (element) => (element?.textContent || '').replace(/\s+/g, ' ').trim();
+
+    const headerCandidates = [...document.querySelectorAll('th, td, div, span, a, button, label')].filter(
+      (element) => {
+        if (visibleText(element) !== carrierName) {
+          return false;
+        }
+
+        const rect = element.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      },
+    );
+
+    if (headerCandidates.length === 0) {
+      return {
+        ok: false,
+        reason: `Column heading "${carrierName}" not found on Medical quotes grid`,
+      };
+    }
+
+    const header = headerCandidates[0];
+    const headerRect = header.getBoundingClientRect();
+    const headerCenterX = headerRect.left + headerRect.width / 2;
+
+    const planCandidates = [...document.querySelectorAll('td, div, span, a, button, label')].filter(
+      (element) => {
+        const text = visibleText(element);
+        if (text !== planName) {
+          return false;
+        }
+
+        const rect = element.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      },
+    );
+
+    if (planCandidates.length === 0) {
+      return {
+        ok: false,
+        reason: `Plan row "${planName}" not found on Medical quotes grid`,
+      };
+    }
+
+    const planInCarrierColumn = planCandidates.some((element) => {
+      const rect = element.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      return Math.abs(centerX - headerCenterX) <= Math.max(headerRect.width, rect.width) / 2 + 20;
+    });
+
+    if (!planInCarrierColumn) {
+      return {
+        ok: false,
+        reason: `Plan "${planName}" was not found in the "${carrierName}" column`,
+      };
+    }
+
+    return {
+      ok: true,
+      carrierName,
+      planName,
+      quotesUrl: window.location.href,
+    };
+  }, { carrierName, planName });
+
+  if (!verification.ok) {
+    throw new Error(verification.reason);
+  }
+
+  console.log(
+    `Verified ${carrierName} column contains plan "${planName}" on Medical quotes grid`,
+  );
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-medical-quotes-grid-verified.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved Medical quotes grid verification screenshot: ${screenshotPath}`);
+
+  return {
+    ...verification,
     screenshotPath,
   };
 }
@@ -1921,6 +2030,7 @@ module.exports = {
   waitForQuoteProcessingComplete,
   selectUploadedQuoteDocumentSource,
   saveQuoteChanges,
+  verifyMedicalQuoteOnQuotesGrid,
   waitForQuoteProcessingAndSaveChanges,
   clickBackToEmployerProfile,
   verifyRequestForProposalsRfpRow,
