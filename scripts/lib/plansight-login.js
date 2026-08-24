@@ -1262,14 +1262,87 @@ async function saveQuoteChanges(page) {
   await page.getByText('Loading...').waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
   await assertNoQuoteErrors(page);
 
-  await page.waitForURL(/#gridInit\/medical/, { timeout: 120000 }).catch(() => {});
-
   const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-quote-save-changes.png');
   await page.screenshot({ path: screenshotPath, fullPage: false });
   console.log(`Saved quote Save Changes screenshot: ${screenshotPath}`);
 
   return {
     quoteUrl: page.url(),
+    screenshotPath,
+  };
+}
+
+async function closeQuoteMedicalPage(page) {
+  console.log('Clicking X to close Quote - Medical page');
+
+  await page.getByText('Loading...').waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
+  await assertNoQuoteErrors(page);
+
+  const quoteHeader = page.getByText('Quote - Medical', { exact: true }).first();
+  const quotePageOpen = await quoteHeader.isVisible().catch(() => false);
+
+  if (!quotePageOpen && page.url().includes('#gridInit/medical')) {
+    console.log('Quote - Medical page is already closed');
+    return {
+      quotesUrl: page.url(),
+      alreadyClosed: true,
+      screenshotPath: null,
+    };
+  }
+
+  await quoteHeader.waitFor({ state: 'visible', timeout: 30000 });
+
+  const closeSelectors = [
+    '.modal-header button.close',
+    '.modal-header .close',
+    'button[aria-label="Close"]',
+    '[data-dismiss="modal"]',
+  ];
+
+  let closed = false;
+  for (const selector of closeSelectors) {
+    const closeButton = page.locator(selector).first();
+    if ((await closeButton.count()) > 0 && (await closeButton.isVisible().catch(() => false))) {
+      await closeButton.scrollIntoViewIfNeeded();
+      await closeButton.click();
+      closed = true;
+      break;
+    }
+  }
+
+  if (!closed) {
+    const headerClose = page
+      .locator('button, a')
+      .filter({ has: page.locator('[data-icon="xmark"], [data-icon="times"], .fa-times, .fa-xmark') })
+      .first();
+
+    if ((await headerClose.count()) > 0 && (await headerClose.isVisible().catch(() => false))) {
+      await headerClose.click();
+      closed = true;
+    }
+  }
+
+  if (!closed) {
+    const xButton = page.getByRole('button', { name: 'Close' }).or(page.locator('button.close')).first();
+    await xButton.waitFor({ state: 'visible', timeout: 30000 });
+    await xButton.scrollIntoViewIfNeeded();
+    await xButton.click();
+  }
+
+  console.log('Clicked close button on Quote - Medical page');
+
+  await page.waitForURL(/#gridInit\/medical/, { timeout: 120000 });
+  await waitForPageReady(page);
+  await page.getByText('Loading...').waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
+  await quoteHeader.waitFor({ state: 'hidden', timeout: 30000 }).catch(() => {});
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-quote-medical-closed.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved Quote - Medical closed screenshot: ${screenshotPath}`);
+
+  return {
+    quotesUrl: page.url(),
+    alreadyClosed: false,
     screenshotPath,
   };
 }
@@ -2030,6 +2103,7 @@ module.exports = {
   waitForQuoteProcessingComplete,
   selectUploadedQuoteDocumentSource,
   saveQuoteChanges,
+  closeQuoteMedicalPage,
   verifyMedicalQuoteOnQuotesGrid,
   waitForQuoteProcessingAndSaveChanges,
   clickBackToEmployerProfile,

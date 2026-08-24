@@ -78,7 +78,7 @@ The PS-9250 Minimum Gate suite verifies:
 - **S3.12** Create New Quote → **Carrier** dropdown → type `a` → Enter
 - **S3.13** Create New Quote → **Click to upload** → select `Doc - SBC Silver 5000 ValueCareTest.pdf`
 - **S3.14** Create New Quote → submit → **Quote - Medical** opens
-- **S3.15** Quote - Medical → wait for AI processing → document dropdown → `Aetna National - Doc - SBC Silver 5000 ValueCareTest.pdf` → click **Save Changes**
+- **S3.15** Quote - Medical → wait for AI processing → document dropdown → **Save Changes** → click **X** to close
 - **S3.16** `#gridInit/medical` → **Medical** tab selected → **Aetna National** column → plan row **1 - Silver 5000 ValueCare**
 
 Reports are written to:

@@ -21,6 +21,7 @@ const {
   waitForQuoteProcessingComplete,
   selectUploadedQuoteDocumentSource,
   saveQuoteChanges,
+  closeQuoteMedicalPage,
   verifyMedicalQuoteOnQuotesGrid,
   waitForQuoteProcessingAndSaveChanges,
   isLoggedIn,
@@ -128,7 +129,7 @@ const SCENARIOS = [
   },
   {
     id: 'S3.15',
-    name: 'Quote - Medical → wait for AI processing → select document → Save Changes',
+    name: 'Quote - Medical → wait for AI processing → select document → Save Changes → close',
     run: runS315,
   },
   {
@@ -348,12 +349,16 @@ async function runS315(page) {
   const processing = await waitForQuoteProcessingComplete(page);
   const document = await selectUploadedQuoteDocumentSource(page);
   const saved = await saveQuoteChanges(page);
+  const closed = await closeQuoteMedicalPage(page);
 
   return {
     quoteUrl: saved.quoteUrl,
+    quotesUrl: closed.quotesUrl,
     sawProcessing: processing.sawProcessing,
     documentLabel: document.documentLabel,
-    screenshotPath: saved.screenshotPath,
+    quoteClosed: !closed.alreadyClosed,
+    submitScreenshotPath: saved.screenshotPath,
+    screenshotPath: closed.screenshotPath || saved.screenshotPath,
   };
 }
 
