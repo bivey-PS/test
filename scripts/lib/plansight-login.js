@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { verifyPlanInCarrierColumn } = require('./quotes-grid-match');
 
 const OUTPUT_DIR = path.join(__dirname, '..', '..', 'automation-output');
 const AUTH_STATE_PATH = path.join(OUTPUT_DIR, 'auth-state.json');
@@ -1424,75 +1425,32 @@ async function verifyMedicalQuoteOnQuotesGrid(
   await medicalTab.waitFor({ state: 'visible', timeout: 30000 });
   console.log('Verified Medical tab is selected on quotes grid');
 
-  const verification = await page.evaluate(({ carrierName, planName }) => {
-    const normalize = (value) => (value || '').replace(/\s+/g, ' ').trim();
-    const planFragment = 'Silver 5000 ValueCare';
-
-    const visibleElements = [...document.querySelectorAll('th, td, div, span, a, button, label')].filter(
-      (element) => {
+  const elementDescriptors = await page.evaluate(() =>
+    [...document.querySelectorAll('th, td, div, span, a, button, label')]
+      .map((element) => {
         const rect = element.getBoundingClientRect();
-        return rect.width > 0 && rect.height > 0;
-      },
-    );
+        return {
+          text: (element.textContent || '').replace(/\s+/g, ' ').trim(),
+          left: rect.left,
+          right: rect.right,
+          top: rect.top,
+          width: rect.width,
+          height: rect.height,
+        };
+      })
+      .filter((element) => element.width > 0 && element.height > 0),
+  );
 
-    const headerCandidates = visibleElements.filter(
-      (element) => normalize(element.textContent) === carrierName,
-    );
-
-    if (headerCandidates.length === 0) {
-      return {
-        ok: false,
-        reason: `Column heading "${carrierName}" not found on Medical quotes grid`,
-      };
-    }
-
-    const header = headerCandidates.sort(
-      (left, right) => left.getBoundingClientRect().top - right.getBoundingClientRect().top,
-    )[0];
-    const headerRect = header.getBoundingClientRect();
-
-    const planCandidates = visibleElements.filter((element) => {
-      const text = normalize(element.textContent);
-      return text === planName || text.includes(planFragment);
-    });
-
-    if (planCandidates.length === 0) {
-      return {
-        ok: false,
-        reason: `Plan row "${planName}" not found on Medical quotes grid`,
-      };
-    }
-
-    const planInCarrierColumn = planCandidates.some((element) => {
-      const rect = element.getBoundingClientRect();
-      return rect.left < headerRect.right + 40 && rect.right > headerRect.left - 40;
-    });
-
-    if (!planInCarrierColumn) {
-      return {
-        ok: false,
-        reason: `Plan "${planName}" was not found in the "${carrierName}" column`,
-      };
-    }
-
-    const matchedPlan = normalize(
-      planCandidates.find((element) => {
-        const rect = element.getBoundingClientRect();
-        return rect.left < headerRect.right + 40 && rect.right > headerRect.left - 40;
-      })?.textContent,
-    );
-
-    return {
-      ok: true,
-      carrierName,
-      planName: matchedPlan || planName,
-      quotesUrl: window.location.href,
-    };
-  }, { carrierName, planName });
+  const verification = verifyPlanInCarrierColumn(elementDescriptors, {
+    carrierName,
+    planName,
+  });
 
   if (!verification.ok) {
     throw new Error(verification.reason);
   }
+
+  verification.quotesUrl = currentUrl;
 
   console.log(
     `Verified ${carrierName} column contains plan "${planName}" on Medical quotes grid`,
