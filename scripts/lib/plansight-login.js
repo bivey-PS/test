@@ -385,6 +385,279 @@ async function openEmployerGroup(page, employerName = 'Ace Testing') {
   };
 }
 
+function buildAutomationEmployerName(date = new Date(), runNumber = null) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const base = `Automation Employer ${year}-${month}-${day}`;
+  return runNumber ? `${base} ${runNumber}` : base;
+}
+
+async function clickAddEmployer(page) {
+  console.log('Clicking Add Employer');
+
+  const addButton = page
+    .getByRole('button', { name: /Add Employer/i })
+    .or(page.getByRole('link', { name: /Add Employer/i }));
+
+  await addButton.first().waitFor({ state: 'visible', timeout: 30000 });
+  await addButton.first().click();
+  await waitForCreateEmployerForm(page);
+}
+
+async function waitForCreateEmployerForm(page) {
+  await Promise.race([
+    page.waitForURL(/#groupCreate|#groupAdd|\/group\/create/i, { timeout: 30000 }),
+    page
+      .getByLabel(/Employer Name|Group Name|^Name$/i)
+      .first()
+      .waitFor({ state: 'visible', timeout: 30000 }),
+    page
+      .locator('.modal:visible input[name="name"], .modal.show input[name="name"]')
+      .first()
+      .waitFor({ state: 'visible', timeout: 30000 }),
+  ]).catch(() => {});
+
+  await waitForPageReady(page);
+}
+
+async function fillInputIfPresent(page, locators, value) {
+  for (const locator of locators) {
+    const field = typeof locator === 'string' ? page.locator(locator) : locator;
+    if ((await field.count()) === 0) {
+      continue;
+    }
+
+    const target = field.first();
+    await target.waitFor({ state: 'visible', timeout: 15000 });
+    await target.click();
+    await target.fill(String(value));
+    return true;
+  }
+
+  return false;
+}
+
+async function selectOptionIfPresent(page, locators, value) {
+  for (const locator of locators) {
+    const field = typeof locator === 'string' ? page.locator(locator) : locator;
+    if ((await field.count()) === 0) {
+      continue;
+    }
+
+    const target = field.first();
+    await target.waitFor({ state: 'visible', timeout: 15000 });
+
+    try {
+      await target.selectOption(value);
+    } catch {
+      await target.selectOption({ label: value });
+    }
+
+    return true;
+  }
+
+  return false;
+}
+
+async function selectFirstSelect2Option(page, containerSelector) {
+  const dropdown = page.locator(containerSelector);
+  if ((await dropdown.count()) === 0) {
+    return false;
+  }
+
+  await dropdown.first().click();
+
+  let searchField = page.locator('.select2-container--open input.select2-search__field');
+  if ((await searchField.count()) === 0) {
+    await page.evaluate((selector) => {
+      const select = window.jQuery?.(selector);
+      if (select?.data('select2')) {
+        select.select2('open');
+      }
+    }, containerSelector.replace('-container', '').replace('.select2-selection', ''));
+  }
+
+  const option = page.locator('.select2-container--open .select2-results__option').first();
+  await option.waitFor({ state: 'visible', timeout: 15000 });
+  await option.click();
+  return true;
+}
+
+async function fillEmployerAddressIfPresent(page) {
+  const filledAddress = await fillInputIfPresent(
+    page,
+    [
+      page.getByLabel(/Address 1|Street Address|^Address$/i),
+      page.locator('input[name*="address" i][name*="1" i]'),
+      page.locator('input[name="address1"]'),
+    ],
+    '123 Main St',
+  );
+
+  if (!filledAddress) {
+    return false;
+  }
+
+  await fillInputIfPresent(page, [page.getByLabel(/^City$/i), page.locator('input[name*="city" i]')], 'Salt Lake City');
+  await selectOptionIfPresent(page, [page.getByLabel(/^State$/i), page.locator('select[name*="state" i]')], 'UT');
+  await fillInputIfPresent(
+    page,
+    [page.getByLabel(/Zip|Postal Code/i), page.locator('input[name*="zip" i]')],
+    '84101',
+  );
+
+  const validateButton = page.getByRole('button', { name: /Validate Address/i });
+  if ((await validateButton.count()) > 0) {
+    console.log('Validating employer address');
+    await validateButton.first().click();
+    await waitForPageReady(page, 120000);
+  }
+
+  return true;
+}
+
+async function fillCreateEmployerForm(
+  page,
+  { employerName, employeeCount = 50, state = 'UT', primaryRenewal = 'January' } = {},
+) {
+  console.log(`Filling Create Employer form for ${employerName}`);
+
+  const nameFilled = await fillInputIfPresent(
+    page,
+    [
+      page.getByLabel(/Employer Name|Group Name|^Name$/i),
+      page.locator('input[name="name"]'),
+      page.locator('input[name="groupName"]'),
+      page.locator('input[id*="employer" i][id*="name" i]'),
+      page.locator('label').filter({ hasText: /Employer Name|Group Name|^Name$/i }).locator('xpath=following::input[1]'),
+    ],
+    employerName,
+  );
+
+  if (!nameFilled) {
+    throw new Error('Could not find employer name field on Create Employer form');
+  }
+
+  await selectFirstSelect2Option(page, '#select2-officeId-container').catch(() => {});
+  await selectOptionIfPresent(
+    page,
+    [page.getByLabel(/^Office$/i), page.locator('select[name*="office" i]'), page.locator('select#officeId')],
+    { index: 1 },
+  );
+
+  await fillInputIfPresent(
+    page,
+    [
+      page.getByLabel(/Employees|Employee Count|# of Employees/i),
+      page.locator('input[name*="employee" i]'),
+      page.locator('input[name="employeeCount"]'),
+    ],
+    employeeCount,
+  );
+
+  await selectOptionIfPresent(
+    page,
+    [page.getByLabel(/^State$/i), page.locator('select[name*="state" i]'), page.locator('select#state')],
+    state,
+  );
+
+  await selectOptionIfPresent(
+    page,
+    [
+      page.getByLabel(/Primary Renewal|Renewal Month/i),
+      page.locator('select[name*="renewal" i]'),
+      page.locator('select[name="primaryRenewalMonth"]'),
+    ],
+    primaryRenewal,
+  );
+
+  await fillEmployerAddressIfPresent(page);
+}
+
+async function saveCreateEmployerForm(page) {
+  console.log('Saving Create Employer form');
+
+  const saveButton = page
+    .getByRole('button', { name: /^Save$|^Create Employer$|^Submit$/i })
+    .or(page.locator('button.btn-primary').filter({ hasText: /^Save$/i }));
+
+  await saveButton.first().waitFor({ state: 'visible', timeout: 30000 });
+  await saveButton.first().click();
+  await waitForPageReady(page, 120000);
+
+  await page.waitForURL(/\/group\/.*#groupUpdate/, { timeout: 120000 });
+  await page.getByText('About This Employer').waitFor({ timeout: 60000 });
+}
+
+async function createEmployer(page, options = {}) {
+  const {
+    employerName,
+    runNumber = null,
+    employeeCount = 50,
+    state = 'UT',
+    primaryRenewal = 'January',
+    screenshotPrefix = 'create-employer',
+  } = options;
+
+  const resolvedName = employerName || buildAutomationEmployerName(new Date(), runNumber);
+
+  await clickAddEmployer(page);
+
+  const formScreenshotPath = path.join(OUTPUT_DIR, `${screenshotPrefix}-form.png`);
+  await page.screenshot({ path: formScreenshotPath, fullPage: false });
+  console.log(`Saved Create Employer form screenshot: ${formScreenshotPath}`);
+
+  await fillCreateEmployerForm(page, {
+    employerName: resolvedName,
+    employeeCount,
+    state,
+    primaryRenewal,
+  });
+
+  await saveCreateEmployerForm(page);
+
+  const screenshotPath = path.join(OUTPUT_DIR, `${screenshotPrefix}-created.png`);
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved created employer screenshot: ${screenshotPath}`);
+
+  return {
+    employerName: resolvedName,
+    employerUrl: page.url(),
+    screenshotPath,
+    formScreenshotPath,
+  };
+}
+
+async function verifyEmployerInGroupList(page, employerName) {
+  console.log(`Verifying employer appears in group list: ${employerName}`);
+
+  if (!page.url().includes('#groupList')) {
+    await navigateToEmployers(page);
+  }
+
+  const employerLink = page.locator('table').getByRole('link', {
+    name: employerName,
+    exact: true,
+  });
+
+  await employerLink.waitFor({ state: 'visible', timeout: 30000 });
+
+  const screenshotPath = path.join(
+    OUTPUT_DIR,
+    `${employerName.toLowerCase().replace(/\s+/g, '-')}-group-list.png`,
+  );
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved group list verification screenshot: ${screenshotPath}`);
+
+  return {
+    found: true,
+    employerName,
+    employersUrl: page.url(),
+    screenshotPath,
+  };
+}
+
 async function startMarketingEventBasicsTab(page) {
   console.log('Starting new Marketing Event from employer group');
 
@@ -2138,6 +2411,12 @@ module.exports = {
   navigateToEmployers,
   openAceTestingEmployer,
   openEmployerGroup,
+  buildAutomationEmployerName,
+  clickAddEmployer,
+  fillCreateEmployerForm,
+  saveCreateEmployerForm,
+  createEmployer,
+  verifyEmployerInGroupList,
   startMarketingEventBasicsTab,
   saveRfpBasicsAndContinue,
   setRfpBasicsName,
