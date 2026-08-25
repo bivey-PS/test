@@ -90,25 +90,25 @@ def create_png(report: dict) -> None:
     ax_phase = fig.add_subplot(grid[0, 1])
     ax_scenarios = fig.add_subplot(grid[1, :])
 
-    # Summary pie
-    if failed == 0:
-        ax_summary.pie(
-            [passed],
-            labels=[f"PASS ({passed})"],
-            colors=["#16a34a"],
-            startangle=90,
-            textprops={"fontsize": 11, "weight": "bold"},
-        )
-    else:
-        ax_summary.pie(
-            [passed, failed],
-            labels=[f"PASS ({passed})", f"FAIL ({failed})"],
-            colors=["#16a34a", "#dc2626"],
-            startangle=90,
-            autopct="%1.0f%%",
-            textprops={"fontsize": 10},
-        )
+    # Summary bar chart
+    summary_labels = ["PASS", "FAIL"]
+    summary_values = [passed, failed]
+    summary_colors = ["#16a34a", "#dc2626"]
+    bars = ax_summary.bar(summary_labels, summary_values, color=summary_colors, width=0.55)
+    ax_summary.set_ylabel("Scenarios")
+    ax_summary.set_ylim(0, max(total, 1) * 1.15)
     ax_summary.set_title("Overall Result", fontsize=13, weight="bold")
+    for bar, value in zip(bars, summary_values):
+        if value > 0:
+            ax_summary.text(
+                bar.get_x() + bar.get_width() / 2,
+                bar.get_height() + 0.3,
+                str(value),
+                ha="center",
+                va="bottom",
+                fontsize=11,
+                weight="bold",
+            )
 
     # Phase breakdown
     phase_counts: dict[str, dict[str, int]] = {}
@@ -213,12 +213,19 @@ def create_html(report: dict) -> None:
     const failed = {summary.get('failed', 0)};
 
     new Chart(document.getElementById('summaryChart'), {{
-      type: 'doughnut',
+      type: 'bar',
       data: {{
-        labels: failed ? ['PASS', 'FAIL'] : ['PASS'],
-        datasets: [{{ data: failed ? [passed, failed] : [passed], backgroundColor: ['#16a34a', '#dc2626'] }}]
+        labels: ['PASS', 'FAIL'],
+        datasets: [{{
+          label: 'Scenarios',
+          data: [passed, failed],
+          backgroundColor: ['#16a34a', '#dc2626']
+        }}]
       }},
-      options: {{ plugins: {{ title: {{ display: true, text: 'Overall Result' }} }} }}
+      options: {{
+        plugins: {{ title: {{ display: true, text: 'Overall Result' }}, legend: {{ display: false }} }},
+        scales: {{ y: {{ beginAtZero: true, ticks: {{ stepSize: 1 }} }} }}
+      }}
     }});
 
     const phases = {{}};
