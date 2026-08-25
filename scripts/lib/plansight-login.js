@@ -407,9 +407,10 @@ async function clickAddEmployer(page) {
 
 async function waitForCreateEmployerForm(page) {
   await Promise.race([
-    page.waitForURL(/#groupCreate|#groupAdd|\/group\/create/i, { timeout: 30000 }),
+    page.waitForURL(/#groupBuilderBasics|#groupCreate|#groupAdd|\/group\/create/i, { timeout: 30000 }),
     page
-      .getByLabel(/Employer Name|Group Name|^Name$/i)
+      .locator('label')
+      .filter({ hasText: /Employer Name/i })
       .first()
       .waitFor({ state: 'visible', timeout: 30000 }),
     page
@@ -419,6 +420,25 @@ async function waitForCreateEmployerForm(page) {
   ]).catch(() => {});
 
   await waitForPageReady(page);
+}
+
+function inputAfterLabel(page, labelPattern) {
+  return page.locator('label').filter({ hasText: labelPattern }).locator('xpath=following::input[1]');
+}
+
+function selectAfterLabel(page, labelPattern) {
+  return page.locator('label').filter({ hasText: labelPattern }).locator('xpath=following::select[1]');
+}
+
+async function clickWizardSaveAndContinue(page, expectedFragment = null) {
+  const saveButton = page.getByRole('button', { name: /Save & Continue/i });
+  await saveButton.first().waitFor({ state: 'visible', timeout: 30000 });
+  await saveButton.first().click();
+  await waitForPageReady(page, 120000);
+
+  if (expectedFragment) {
+    await waitForUrlMatch(page, hashFragmentPattern(expectedFragment), 120000);
+  }
 }
 
 async function fillInputIfPresent(page, locators, value) {
@@ -517,11 +537,65 @@ async function fillEmployerAddressIfPresent(page) {
   return true;
 }
 
+async function fillGroupBuilderBasics(
+  page,
+  {
+    employerName,
+    employeeCount = 50,
+    state = 'Utah',
+    clientStatus = 'Prospect',
+    address = '123 Main St',
+    city = 'Salt Lake City',
+    zipCode = '84101',
+  } = {},
+) {
+  console.log(`Filling Group Builder Basics for ${employerName}`);
+
+  if (!urlHasHashFragment(page, 'groupBuilderBasics')) {
+    throw new Error('Expected to be on Group Builder Basics step');
+  }
+
+  await inputAfterLabel(page, /Employer Name/i).fill(employerName);
+  await inputAfterLabel(page, /Headquarter/i).fill(address);
+  await inputAfterLabel(page, /^City$/i).fill(city);
+  await selectAfterLabel(page, /^State/i).selectOption({ label: state });
+  await inputAfterLabel(page, /Zip Code/i).fill(zipCode);
+  await inputAfterLabel(page, /Est\. Employee Lives/i).fill(String(employeeCount));
+  await selectAfterLabel(page, /^Status/i).selectOption({ label: clientStatus });
+}
+
+async function fillGroupBuilderTeam(page, { producerName = 'Boyd Ivey', accountManagerName = 'Boyd Ivey' } = {}) {
+  console.log('Filling Group Builder Account Team');
+
+  if (!urlHasHashFragment(page, 'groupBuilderTeam')) {
+    throw new Error('Expected to be on Group Builder Account Team step');
+  }
+
+  await page.locator('select[name="primarySalesLead"]').selectOption({ label: producerName });
+  await page.locator('select[name="primaryServiceLead"]').selectOption({ label: accountManagerName });
+}
+
 async function fillCreateEmployerForm(
   page,
-  { employerName, employeeCount = 50, state = 'UT', primaryRenewal = 'January' } = {},
+  {
+    employerName,
+    employeeCount = 50,
+    state = 'Utah',
+    clientStatus = 'Prospect',
+    primaryRenewal = 'January',
+  } = {},
 ) {
   console.log(`Filling Create Employer form for ${employerName}`);
+
+  if (urlHasHashFragment(page, 'groupBuilderBasics')) {
+    await fillGroupBuilderBasics(page, {
+      employerName,
+      employeeCount,
+      state,
+      clientStatus,
+    });
+    return;
+  }
 
   const nameFilled = await fillInputIfPresent(
     page,
@@ -539,17 +613,10 @@ async function fillCreateEmployerForm(
     throw new Error('Could not find employer name field on Create Employer form');
   }
 
-  await selectFirstSelect2Option(page, '#select2-officeId-container').catch(() => {});
-  await selectOptionIfPresent(
-    page,
-    [page.getByLabel(/^Office$/i), page.locator('select[name*="office" i]'), page.locator('select#officeId')],
-    { index: 1 },
-  );
-
   await fillInputIfPresent(
     page,
     [
-      page.getByLabel(/Employees|Employee Count|# of Employees/i),
+      page.getByLabel(/Employees|Employee Count|Est\. Employee Lives|# of Employees/i),
       page.locator('input[name*="employee" i]'),
       page.locator('input[name="employeeCount"]'),
     ],
@@ -576,6 +643,11 @@ async function fillCreateEmployerForm(
 }
 
 async function saveCreateEmployerForm(page) {
+  if (urlHasHashFragment(page, 'groupBuilderBasics')) {
+    await clickWizardSaveAndContinue(page, 'groupBuilderContacts');
+    return;
+  }
+
   console.log('Saving Create Employer form');
 
   const saveButton = page
@@ -585,9 +657,30 @@ async function saveCreateEmployerForm(page) {
   await saveButton.first().waitFor({ state: 'visible', timeout: 30000 });
   await saveButton.first().click();
   await waitForPageReady(page, 120000);
+}
 
-  await page.waitForURL(/\/group\/.*#groupUpdate/, { timeout: 120000 });
-  await page.getByText('About This Employer').waitFor({ timeout: 60000 });
+async function completeGroupBuilderWizard(page, options = {}) {
+  if (urlHasHashFragment(page, 'groupBuilderBasics')) {
+    await clickWizardSaveAndContinue(page, 'groupBuilderContacts');
+  }
+
+  if (urlHasHashFragment(page, 'groupBuilderContacts')) {
+    console.log('Continuing past Group Builder Contacts');
+    await clickWizardSaveAndContinue(page, 'groupBuilderTeam');
+  }
+
+  if (urlHasHashFragment(page, 'groupBuilderTeam')) {
+    await fillGroupBuilderTeam(page, options);
+    console.log('Submitting Create Employer');
+    await page.getByRole('button', { name: /Create Employer/i }).click();
+    await waitForPageReady(page, 120000);
+    await page.waitForURL(/\/group\/.*#groupUpdate/, { timeout: 120000 });
+    await page.getByText('About This Employer').waitFor({ timeout: 120000 }).catch(async () => {
+      await page.locator('#pending-active-pastDue-rfp-table, .page-title, h1').first().waitFor({
+        timeout: 120000,
+      });
+    });
+  }
 }
 
 async function createEmployer(page, options = {}) {
@@ -595,7 +688,10 @@ async function createEmployer(page, options = {}) {
     employerName,
     runNumber = null,
     employeeCount = 50,
-    state = 'UT',
+    state = 'Utah',
+    clientStatus = 'Prospect',
+    producerName = 'Boyd Ivey',
+    accountManagerName = 'Boyd Ivey',
     primaryRenewal = 'January',
     screenshotPrefix = 'create-employer',
   } = options;
@@ -608,14 +704,17 @@ async function createEmployer(page, options = {}) {
   await page.screenshot({ path: formScreenshotPath, fullPage: false });
   console.log(`Saved Create Employer form screenshot: ${formScreenshotPath}`);
 
-  await fillCreateEmployerForm(page, {
+  await fillGroupBuilderBasics(page, {
     employerName: resolvedName,
     employeeCount,
     state,
-    primaryRenewal,
+    clientStatus,
   });
 
-  await saveCreateEmployerForm(page);
+  await completeGroupBuilderWizard(page, {
+    producerName,
+    accountManagerName,
+  });
 
   const screenshotPath = path.join(OUTPUT_DIR, `${screenshotPrefix}-created.png`);
   await page.screenshot({ path: screenshotPath, fullPage: false });
@@ -636,10 +735,24 @@ async function verifyEmployerInGroupList(page, employerName) {
     await navigateToEmployers(page);
   }
 
-  const employerLink = page.locator('table').getByRole('link', {
-    name: employerName,
-    exact: true,
-  });
+  const searchInput = page
+    .getByPlaceholder(/Search .* Companies/i)
+    .or(page.locator('input[type="search"], input[placeholder*="Search" i]').first());
+
+  if ((await searchInput.count()) > 0) {
+    await searchInput.first().click();
+    await searchInput.first().fill(employerName);
+    await searchInput.first().press('Enter');
+    await page.locator('table tbody tr').filter({ hasText: employerName }).first().waitFor({
+      timeout: 30000,
+    });
+  }
+
+  const employerLink = page
+    .locator('table tbody tr')
+    .filter({ hasText: employerName })
+    .getByRole('link', { name: employerName, exact: true })
+    .or(page.locator('table').getByRole('link', { name: employerName, exact: true }));
 
   await employerLink.waitFor({ state: 'visible', timeout: 30000 });
 
@@ -2413,8 +2526,11 @@ module.exports = {
   openEmployerGroup,
   buildAutomationEmployerName,
   clickAddEmployer,
+  fillGroupBuilderBasics,
+  fillGroupBuilderTeam,
   fillCreateEmployerForm,
   saveCreateEmployerForm,
+  completeGroupBuilderWizard,
   createEmployer,
   verifyEmployerInGroupList,
   startMarketingEventBasicsTab,

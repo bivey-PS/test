@@ -71,7 +71,9 @@ async function runS23(page, _context, options) {
     runNumber,
     employeeCount: options.employeeCount,
     state: options.employerState,
-    primaryRenewal: options.primaryRenewal,
+    clientStatus: options.clientStatus,
+    producerName: options.producerName,
+    accountManagerName: options.accountManagerName,
     screenshotPrefix: 'create-employer',
   });
 

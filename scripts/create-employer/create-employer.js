@@ -72,6 +72,9 @@ async function runCreateEmployerSuite() {
     authStatePath,
     employeeCount: config.employeeCount,
     employerState: config.employerState,
+    clientStatus: config.clientStatus,
+    producerName: config.producerName,
+    accountManagerName: config.accountManagerName,
     primaryRenewal: config.primaryRenewal,
   };
 

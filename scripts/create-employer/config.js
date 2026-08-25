@@ -26,7 +26,10 @@ const config = {
   outputDir: OUTPUT_DIR,
   reportPrefix: 'create-employer',
   employeeCount: Number(process.env.EMPLOYER_EMPLOYEE_COUNT || 50),
-  employerState: process.env.EMPLOYER_STATE || 'UT',
+  employerState: process.env.EMPLOYER_STATE || 'Utah',
+  clientStatus: process.env.EMPLOYER_CLIENT_STATUS || 'Prospect',
+  producerName: process.env.EMPLOYER_PRODUCER || 'Boyd Ivey',
+  accountManagerName: process.env.EMPLOYER_ACCOUNT_MANAGER || 'Boyd Ivey',
   primaryRenewal: process.env.EMPLOYER_PRIMARY_RENEWAL || 'January',
 };
 
