@@ -85,6 +85,16 @@ Reports are written to:
 - `automation-output/ps-9250-minimum-gate-report.json`
 - `automation-output/ps-9250-minimum-gate-report.md`
 
+Generate charts from the latest report:
+
+```bash
+npm run automate:ps9250:minimum-gate:graph
+```
+
+Outputs:
+- `automation-output/ps-9250-minimum-gate-report-graph.png`
+- `automation-output/ps-9250-minimum-gate-report-graph.html`
+
 Login script defaults to `BASE_URL=https://test.plansight.com`. Override if needed:
 
 ```bash
