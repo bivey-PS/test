@@ -355,23 +355,45 @@ async function openAceTestingEmployer(page) {
   };
 }
 
+async function assertEmployerProfileLoaded(page, employerName = null) {
+  await page.getByText('About This Employer').waitFor({ timeout: 120000 });
+
+  if (employerName) {
+    const profileName = page
+      .getByRole('heading', { name: employerName, exact: true })
+      .or(page.getByText(employerName, { exact: true }));
+    await profileName.first().waitFor({ state: 'visible', timeout: 30000 });
+  }
+}
+
 async function openEmployerGroup(page, employerName = 'Ace Testing') {
   console.log(`Opening employer group: ${employerName}`);
 
-  await page.getByRole('link', { name: employerName, exact: true }).waitFor({
-    timeout: 30000,
-  });
+  if (!page.url().includes('#groupList')) {
+    await navigateToEmployers(page);
+  }
+
+  const searchInput = page
+    .getByPlaceholder(/Search .* Companies/i)
+    .or(page.locator('input[type="search"], input[placeholder*="Search" i]').first());
+
+  if ((await searchInput.count()) > 0) {
+    await searchInput.first().click();
+    await searchInput.first().fill(employerName);
+    await searchInput.first().press('Enter');
+  }
 
   const employerLink = page.locator('table').getByRole('link', {
     name: employerName,
     exact: true,
   });
+  await employerLink.waitFor({ state: 'visible', timeout: 30000 });
   await employerLink.scrollIntoViewIfNeeded();
-  await employerLink.evaluate((element) => element.click());
+  await employerLink.click();
 
   await page.waitForURL(/\/group\/.*#groupUpdate/, { timeout: 30000 });
   await waitForPageReady(page);
-  await page.getByText('About This Employer').waitFor({ timeout: 60000 });
+  await assertEmployerProfileLoaded(page, employerName);
 
   const screenshotSlug = employerName.toLowerCase().replace(/\s+/g, '-');
   const screenshotPath = path.join(OUTPUT_DIR, `${screenshotSlug}-employer.png`);
@@ -406,19 +428,9 @@ async function clickAddEmployer(page) {
 }
 
 async function waitForCreateEmployerForm(page) {
-  await Promise.race([
-    page.waitForURL(/#groupBuilderBasics|#groupCreate|#groupAdd|\/group\/create/i, { timeout: 30000 }),
-    page
-      .locator('label')
-      .filter({ hasText: /Employer Name/i })
-      .first()
-      .waitFor({ state: 'visible', timeout: 30000 }),
-    page
-      .locator('.modal:visible input[name="name"], .modal.show input[name="name"]')
-      .first()
-      .waitFor({ state: 'visible', timeout: 30000 }),
-  ]).catch(() => {});
-
+  await page.waitForURL(/#groupBuilderBasics|#groupCreate|#groupAdd|\/group\/create/i, {
+    timeout: 30000,
+  });
   await waitForPageReady(page);
 }
 
@@ -657,9 +669,13 @@ async function saveCreateEmployerForm(page) {
   await saveButton.first().waitFor({ state: 'visible', timeout: 30000 });
   await saveButton.first().click();
   await waitForPageReady(page, 120000);
+  await page.waitForURL(/\/group\/.*#groupUpdate/, { timeout: 120000 });
+  await page.getByText('About This Employer').waitFor({ timeout: 60000 });
 }
 
 async function completeGroupBuilderWizard(page, options = {}) {
+  const { employerName = null, producerName, accountManagerName } = options;
+
   if (urlHasHashFragment(page, 'groupBuilderBasics')) {
     await clickWizardSaveAndContinue(page, 'groupBuilderContacts');
   }
@@ -669,18 +685,18 @@ async function completeGroupBuilderWizard(page, options = {}) {
     await clickWizardSaveAndContinue(page, 'groupBuilderTeam');
   }
 
-  if (urlHasHashFragment(page, 'groupBuilderTeam')) {
-    await fillGroupBuilderTeam(page, options);
-    console.log('Submitting Create Employer');
-    await page.getByRole('button', { name: /Create Employer/i }).click();
-    await waitForPageReady(page, 120000);
-    await page.waitForURL(/\/group\/.*#groupUpdate/, { timeout: 120000 });
-    await page.getByText('About This Employer').waitFor({ timeout: 120000 }).catch(async () => {
-      await page.locator('#pending-active-pastDue-rfp-table, .page-title, h1').first().waitFor({
-        timeout: 120000,
-      });
-    });
+  if (!urlHasHashFragment(page, 'groupBuilderTeam')) {
+    throw new Error(
+      `Expected Group Builder Account Team step before Create Employer (url: ${page.url()})`,
+    );
   }
+
+  await fillGroupBuilderTeam(page, { producerName, accountManagerName });
+  console.log('Submitting Create Employer');
+  await page.getByRole('button', { name: /Create Employer/i }).click();
+  await waitForPageReady(page, 120000);
+  await page.waitForURL(/\/group\/.*#groupUpdate/, { timeout: 120000 });
+  await assertEmployerProfileLoaded(page, employerName);
 }
 
 async function createEmployer(page, options = {}) {
@@ -700,6 +716,10 @@ async function createEmployer(page, options = {}) {
 
   await clickAddEmployer(page);
 
+  if (!urlHasHashFragment(page, 'groupBuilderBasics')) {
+    throw new Error(`Expected Group Builder Basics after Add Employer (url: ${page.url()})`);
+  }
+
   const formScreenshotPath = path.join(OUTPUT_DIR, `${screenshotPrefix}-form.png`);
   await page.screenshot({ path: formScreenshotPath, fullPage: false });
   console.log(`Saved Create Employer form screenshot: ${formScreenshotPath}`);
@@ -712,6 +732,7 @@ async function createEmployer(page, options = {}) {
   });
 
   await completeGroupBuilderWizard(page, {
+    employerName: resolvedName,
     producerName,
     accountManagerName,
   });
@@ -743,16 +764,13 @@ async function verifyEmployerInGroupList(page, employerName) {
     await searchInput.first().click();
     await searchInput.first().fill(employerName);
     await searchInput.first().press('Enter');
-    await page.locator('table tbody tr').filter({ hasText: employerName }).first().waitFor({
-      timeout: 30000,
-    });
   }
 
-  const employerLink = page
-    .locator('table tbody tr')
-    .filter({ hasText: employerName })
-    .getByRole('link', { name: employerName, exact: true })
-    .or(page.locator('table').getByRole('link', { name: employerName, exact: true }));
+  // Exact link name only — substring hasText would match "... 10" when looking for "... 1"
+  const employerLink = page.locator('table').getByRole('link', {
+    name: employerName,
+    exact: true,
+  });
 
   await employerLink.waitFor({ state: 'visible', timeout: 30000 });
 
