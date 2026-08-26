@@ -1,0 +1,2589 @@
+const fs = require('fs');
+const path = require('path');
+
+const OUTPUT_DIR = path.join(__dirname, '..', '..', 'automation-output');
+const AUTH_STATE_PATH = path.join(OUTPUT_DIR, 'auth-state.json');
+
+function getAuthStatePathForBaseUrl(baseUrl) {
+  const hostname = new URL(baseUrl).hostname.replace(/\./g, '-');
+  return path.join(OUTPUT_DIR, `auth-state-${hostname}.json`);
+}
+
+function authStateMatchesBaseUrl(baseUrl, authStatePath = AUTH_STATE_PATH) {
+  if (!fs.existsSync(authStatePath)) {
+    return false;
+  }
+
+  try {
+    const authState = JSON.parse(fs.readFileSync(authStatePath, 'utf8'));
+    const baseHost = new URL(baseUrl).hostname;
+
+    const originMatch = authState.origins?.some((origin) => {
+      try {
+        return new URL(origin.origin).hostname === baseHost;
+      } catch {
+        return false;
+      }
+    });
+
+    if (originMatch) {
+      return true;
+    }
+
+    return authState.cookies?.some((cookie) => {
+      const domain = cookie.domain?.replace(/^\./, '');
+      return domain === baseHost || baseHost.endsWith(`.${domain}`);
+    });
+  } catch {
+    return false;
+  }
+}
+
+async function saveAuthState(context, authStatePath = AUTH_STATE_PATH) {
+  fs.mkdirSync(path.dirname(authStatePath), { recursive: true });
+  await context.storageState({ path: authStatePath });
+  console.log(`Saved auth session: ${authStatePath}`);
+}
+
+function isLoggedIn(url) {
+  const hostname = typeof url === 'string' ? new URL(url).hostname : url.hostname;
+  return hostname.includes('plansight.com') && !hostname.includes('devauth');
+}
+
+async function getVisibleAuthError(page) {
+  const errorLocator = page.locator(
+    '[role="alert"], .ulp-input-error-message, .error-message',
+  );
+  const count = await errorLocator.count();
+  if (count === 0) {
+    return null;
+  }
+
+  const messages = await errorLocator.allTextContents();
+  const cleaned = messages.map((text) => text.trim()).filter(Boolean);
+  return cleaned[0] || null;
+}
+
+async function clickContinue(page) {
+  await page.getByRole('button', { name: 'Continue' }).click();
+}
+
+async function waitForAuthStep(page, urlPattern, timeout = 15000) {
+  const stepError = await Promise.race([
+    page.waitForURL(urlPattern, { timeout }).then(() => null),
+    getVisibleAuthError(page),
+  ]);
+
+  if (stepError) {
+    throw new Error(stepError);
+  }
+}
+
+async function ensureRememberDeviceChecked(page) {
+  const rememberDevice = page.locator('#rememberBrowser');
+  await rememberDevice.waitFor({ state: 'visible', timeout: 15000 });
+
+  if (!(await rememberDevice.isChecked())) {
+    await rememberDevice.check({ force: true });
+  }
+
+  if (!(await rememberDevice.isChecked())) {
+    const label = page.locator('label[for="rememberBrowser"]');
+    if (await label.isVisible()) {
+      await label.click({ force: true });
+    }
+  }
+
+  if (!(await rememberDevice.isChecked())) {
+    throw new Error(
+      '"Remember this device for 30 days" checkbox is not checked — cannot skip MFA on future runs.',
+    );
+  }
+
+  console.log('Verified "Remember this device for 30 days" is checked');
+}
+
+async function completeMfa(page, mfaCode) {
+  if (!page.url().includes('/u/mfa-sms-challenge')) {
+    return;
+  }
+
+  if (!mfaCode) {
+    throw new Error(
+      'SMS verification required. Provide MFA_CODE=123456 to complete login.',
+    );
+  }
+
+  await page.locator('#code').fill(mfaCode);
+  await ensureRememberDeviceChecked(page);
+
+  await clickContinue(page);
+
+  const mfaError = await Promise.race([
+    page
+      .waitForURL((url) => isLoggedIn(url), { timeout: 30000 })
+      .then(() => null),
+    getVisibleAuthError(page),
+  ]);
+
+  if (mfaError) {
+    throw new Error(mfaError);
+  }
+
+  if (page.url().includes('/u/mfa-sms-challenge')) {
+    throw new Error('MFA verification did not complete. Check the SMS code and try again.');
+  }
+}
+
+async function sessionIsValid(page, baseUrl) {
+  const dashboardUrl = `${baseUrl.replace(/\/$/, '')}/app#dashboard`;
+
+  try {
+    await page.goto(dashboardUrl, { waitUntil: 'networkidle', timeout: 60000 });
+
+    if (
+      !isLoggedIn(page.url()) ||
+      page.url().includes('status=timeout') ||
+      page.url().includes('/login')
+    ) {
+      return false;
+    }
+
+    await page.getByText(/Welcome .+/).waitFor({ timeout: 15000 });
+    await page.getByText('Renewals', { exact: true }).first().waitFor({ timeout: 15000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function ensureLoggedIn(page, context, { baseUrl, username, password, mfaCode, authStatePath }) {
+  if (await sessionIsValid(page, baseUrl)) {
+    console.log('Reusing saved session — MFA not required');
+    return { reusedSession: true };
+  }
+
+  console.log('Saved session unavailable or expired — performing login');
+  await context.clearCookies();
+  await login(page, { baseUrl, username, password, mfaCode });
+
+  if (context) {
+    await saveAuthState(context, authStatePath || AUTH_STATE_PATH);
+  }
+
+  return { reusedSession: false };
+}
+
+async function login(page, { baseUrl, username, password, mfaCode }) {
+  await page.goto(baseUrl, { waitUntil: 'networkidle', timeout: 60000 });
+
+  if (page.url().includes('/u/mfa-sms-challenge')) {
+    console.log('On SMS MFA challenge page');
+    await completeMfa(page, mfaCode);
+
+    if (!isLoggedIn(page.url())) {
+      await page.waitForURL((url) => isLoggedIn(url), { timeout: 30000 });
+    }
+
+    return;
+  }
+
+  await page.waitForURL(/\/u\/login\/identifier/, { timeout: 30000 });
+  console.log('On login identifier page');
+
+  await page.locator('#username').fill(username);
+  await clickContinue(page);
+  await waitForAuthStep(page, /\/u\/login\/password/);
+
+  console.log('On login password page');
+
+  await page.locator('#password').fill(password);
+  await clickContinue(page);
+
+  if (page.url().includes('/u/login/password')) {
+    await waitForAuthStep(page, /\/u\/(mfa-sms-challenge|login\/)/, 30000);
+  }
+
+  if (page.url().includes('/u/mfa-sms-challenge')) {
+    console.log('On SMS MFA challenge page');
+    await completeMfa(page, mfaCode);
+  }
+
+  if (!isLoggedIn(page.url())) {
+    await page.waitForURL((url) => isLoggedIn(url), { timeout: 30000 });
+  }
+}
+
+async function verifyDashboard(page, baseUrl) {
+  const dashboardUrl = `${baseUrl.replace(/\/$/, '')}/app#dashboard`;
+
+  if (!page.url().includes('#dashboard')) {
+    await page.goto(dashboardUrl, { waitUntil: 'networkidle', timeout: 60000 });
+  }
+
+  console.log('Verifying dashboard');
+
+  const welcome = page.getByText(/Welcome .+/);
+  await welcome.waitFor({ timeout: 30000 });
+  const welcomeText = (await welcome.first().textContent())?.trim();
+
+  for (const label of ['Renewals', 'Draft RFPs', 'Active RFPs', 'Past Due RFPs']) {
+    await page.getByText(label, { exact: true }).first().waitFor({ timeout: 15000 });
+  }
+
+  const activeRfpsTab = page.getByText('Active RFPs', { exact: true }).first();
+  await activeRfpsTab.click();
+
+  await page.getByRole('button', { name: 'Add Filter' }).waitFor({ timeout: 15000 });
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'dashboard.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved dashboard screenshot: ${screenshotPath}`);
+
+  return {
+    welcomeText,
+    dashboardUrl: page.url(),
+    screenshotPath,
+  };
+}
+
+async function navigateToEmployers(page) {
+  console.log('Clicking Employers in sidebar');
+
+  const sidebar = page.locator('.sidebar-collapse');
+  await sidebar.waitFor({ timeout: 15000 });
+
+  const employersLink = sidebar.locator('li.employers a');
+  await employersLink.click();
+
+  await page.waitForURL(/#groupList/, { timeout: 30000 });
+  await page.getByText('All Employers').waitFor({ timeout: 15000 });
+  await page.getByRole('columnheader', { name: 'Employer' }).waitFor({ timeout: 30000 });
+  await page.locator('table tbody tr').first().waitFor({ timeout: 30000 });
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'employers.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved employers screenshot: ${screenshotPath}`);
+
+  return {
+    employersUrl: page.url(),
+    screenshotPath,
+  };
+}
+
+function hashFragmentPattern(fragment) {
+  const escaped = fragment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`#${escaped}(?:[/?#]|$)`);
+}
+
+function urlHasHashFragment(pageOrUrl, fragment) {
+  const url = typeof pageOrUrl === 'string' ? pageOrUrl : pageOrUrl.url();
+  return hashFragmentPattern(fragment).test(url);
+}
+
+async function waitForWizardBackgroundProcessing(page, timeout = 180000) {
+  const processingMessages = [
+    page.getByText(/Creating Plan Details/i),
+    page.getByText(/Attaching .* documents/i),
+  ];
+
+  for (const message of processingMessages) {
+    if ((await message.count()) > 0 && (await message.first().isVisible().catch(() => false))) {
+      console.log('Waiting for wizard background processing to finish');
+      await message.first().waitFor({ state: 'hidden', timeout }).catch(() => {});
+      await message.first().waitFor({ state: 'detached', timeout: 30000 }).catch(() => {});
+    }
+  }
+
+  await page
+    .locator('#content-overlay, #content-loading-spinner, .modal-backdrop, .overlay')
+    .waitFor({ state: 'hidden', timeout: 120000 })
+    .catch(() => {});
+  await page.getByText('Loading...').waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
+  await waitForPageReady(page, timeout);
+}
+
+async function waitForPageReady(page, timeout = 60000) {
+  const loading = page.getByText('Loading...');
+  if ((await loading.count()) > 0) {
+    await loading.first().waitFor({ state: 'hidden', timeout }).catch(() => {});
+  }
+
+  await page.waitForLoadState('networkidle', { timeout }).catch(() => {});
+}
+
+async function waitForUrlMatch(page, pattern, timeout = 60000) {
+  const regex = pattern instanceof RegExp ? pattern : new RegExp(pattern);
+
+  if (regex.test(page.url())) {
+    return;
+  }
+
+  await page.waitForFunction(
+    ({ source, flags }) => new RegExp(source, flags).test(window.location.href),
+    { source: regex.source, flags: regex.flags.replace('g', '') },
+    { timeout },
+  );
+}
+
+async function openAceTestingEmployer(page) {
+  console.log('Waiting for employers table to populate');
+
+  await page.getByRole('link', { name: 'Ace Testing', exact: true }).waitFor({
+    timeout: 30000,
+  });
+
+  const employerLink = page.locator('table').getByRole('link', {
+    name: 'Ace Testing',
+    exact: true,
+  });
+  await employerLink.scrollIntoViewIfNeeded();
+  await employerLink.evaluate((element) => element.click());
+
+  await page.waitForURL(/\/group\/.*#groupUpdate/, { timeout: 30000 });
+  await waitForPageReady(page);
+  await page.getByText('About This Employer').waitFor({ timeout: 60000 });
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ace-testing-employer.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved Ace Testing employer screenshot: ${screenshotPath}`);
+
+  return {
+    employerUrl: page.url(),
+    employerName: 'Ace Testing',
+    screenshotPath,
+  };
+}
+
+async function assertEmployerProfileLoaded(page, employerName = null) {
+  await page.getByText('About This Employer').waitFor({ timeout: 120000 });
+
+  if (employerName) {
+    const profileName = page
+      .getByRole('heading', { name: employerName, exact: true })
+      .or(page.getByText(employerName, { exact: true }));
+    await profileName.first().waitFor({ state: 'visible', timeout: 30000 });
+  }
+}
+
+async function openEmployerGroup(page, employerName = 'Ace Testing') {
+  console.log(`Opening employer group: ${employerName}`);
+
+  if (!page.url().includes('#groupList')) {
+    await navigateToEmployers(page);
+  }
+
+  const searchInput = page
+    .getByPlaceholder(/Search .* Companies/i)
+    .or(page.locator('input[type="search"], input[placeholder*="Search" i]').first());
+
+  if ((await searchInput.count()) > 0) {
+    await searchInput.first().click();
+    await searchInput.first().fill(employerName);
+    await searchInput.first().press('Enter');
+  }
+
+  const employerLink = page.locator('table').getByRole('link', {
+    name: employerName,
+    exact: true,
+  });
+  await employerLink.waitFor({ state: 'visible', timeout: 30000 });
+  await employerLink.scrollIntoViewIfNeeded();
+  await employerLink.click();
+
+  await page.waitForURL(/\/group\/.*#groupUpdate/, { timeout: 30000 });
+  await waitForPageReady(page);
+  await assertEmployerProfileLoaded(page, employerName);
+
+  const screenshotSlug = employerName.toLowerCase().replace(/\s+/g, '-');
+  const screenshotPath = path.join(OUTPUT_DIR, `${screenshotSlug}-employer.png`);
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved ${employerName} employer screenshot: ${screenshotPath}`);
+
+  return {
+    employerUrl: page.url(),
+    employerName,
+    screenshotPath,
+  };
+}
+
+function buildAutomationEmployerName(date = new Date(), runNumber = null) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const base = `Automation Employer ${year}-${month}-${day}`;
+  return runNumber ? `${base} ${runNumber}` : base;
+}
+
+async function clickAddEmployer(page) {
+  console.log('Clicking Add Employer');
+
+  const addButton = page
+    .getByRole('button', { name: /Add Employer/i })
+    .or(page.getByRole('link', { name: /Add Employer/i }));
+
+  await addButton.first().waitFor({ state: 'visible', timeout: 30000 });
+  await addButton.first().click();
+  await waitForCreateEmployerForm(page);
+}
+
+async function waitForCreateEmployerForm(page) {
+  await page.waitForURL(/#groupBuilderBasics|#groupCreate|#groupAdd|\/group\/create/i, {
+    timeout: 30000,
+  });
+  await waitForPageReady(page);
+}
+
+function inputAfterLabel(page, labelPattern) {
+  return page.locator('label').filter({ hasText: labelPattern }).locator('xpath=following::input[1]');
+}
+
+function selectAfterLabel(page, labelPattern) {
+  return page.locator('label').filter({ hasText: labelPattern }).locator('xpath=following::select[1]');
+}
+
+async function clickWizardSaveAndContinue(page, expectedFragment = null) {
+  const saveButton = page.getByRole('button', { name: /Save & Continue/i });
+  await saveButton.first().waitFor({ state: 'visible', timeout: 30000 });
+  await saveButton.first().click();
+  await waitForPageReady(page, 120000);
+
+  if (expectedFragment) {
+    await waitForUrlMatch(page, hashFragmentPattern(expectedFragment), 120000);
+  }
+}
+
+async function fillInputIfPresent(page, locators, value) {
+  for (const locator of locators) {
+    const field = typeof locator === 'string' ? page.locator(locator) : locator;
+    if ((await field.count()) === 0) {
+      continue;
+    }
+
+    const target = field.first();
+    await target.waitFor({ state: 'visible', timeout: 15000 });
+    await target.click();
+    await target.fill(String(value));
+    return true;
+  }
+
+  return false;
+}
+
+async function selectOptionIfPresent(page, locators, value) {
+  for (const locator of locators) {
+    const field = typeof locator === 'string' ? page.locator(locator) : locator;
+    if ((await field.count()) === 0) {
+      continue;
+    }
+
+    const target = field.first();
+    await target.waitFor({ state: 'visible', timeout: 15000 });
+
+    try {
+      await target.selectOption(value);
+    } catch {
+      await target.selectOption({ label: value });
+    }
+
+    return true;
+  }
+
+  return false;
+}
+
+async function selectFirstSelect2Option(page, containerSelector) {
+  const dropdown = page.locator(containerSelector);
+  if ((await dropdown.count()) === 0) {
+    return false;
+  }
+
+  await dropdown.first().click();
+
+  let searchField = page.locator('.select2-container--open input.select2-search__field');
+  if ((await searchField.count()) === 0) {
+    await page.evaluate((selector) => {
+      const select = window.jQuery?.(selector);
+      if (select?.data('select2')) {
+        select.select2('open');
+      }
+    }, containerSelector.replace('-container', '').replace('.select2-selection', ''));
+  }
+
+  const option = page.locator('.select2-container--open .select2-results__option').first();
+  await option.waitFor({ state: 'visible', timeout: 15000 });
+  await option.click();
+  return true;
+}
+
+async function fillEmployerAddressIfPresent(page) {
+  const filledAddress = await fillInputIfPresent(
+    page,
+    [
+      page.getByLabel(/Address 1|Street Address|^Address$/i),
+      page.locator('input[name*="address" i][name*="1" i]'),
+      page.locator('input[name="address1"]'),
+    ],
+    '123 Main St',
+  );
+
+  if (!filledAddress) {
+    return false;
+  }
+
+  await fillInputIfPresent(page, [page.getByLabel(/^City$/i), page.locator('input[name*="city" i]')], 'Salt Lake City');
+  await selectOptionIfPresent(page, [page.getByLabel(/^State$/i), page.locator('select[name*="state" i]')], 'UT');
+  await fillInputIfPresent(
+    page,
+    [page.getByLabel(/Zip|Postal Code/i), page.locator('input[name*="zip" i]')],
+    '84101',
+  );
+
+  const validateButton = page.getByRole('button', { name: /Validate Address/i });
+  if ((await validateButton.count()) > 0) {
+    console.log('Validating employer address');
+    await validateButton.first().click();
+    await waitForPageReady(page, 120000);
+  }
+
+  return true;
+}
+
+async function fillGroupBuilderBasics(
+  page,
+  {
+    employerName,
+    employeeCount = 50,
+    state = 'Utah',
+    clientStatus = 'Prospect',
+    address = '123 Main St',
+    city = 'Salt Lake City',
+    zipCode = '84101',
+  } = {},
+) {
+  console.log(`Filling Group Builder Basics for ${employerName}`);
+
+  if (!urlHasHashFragment(page, 'groupBuilderBasics')) {
+    throw new Error('Expected to be on Group Builder Basics step');
+  }
+
+  await inputAfterLabel(page, /Employer Name/i).fill(employerName);
+  await inputAfterLabel(page, /Headquarter/i).fill(address);
+  await inputAfterLabel(page, /^City$/i).fill(city);
+  await selectAfterLabel(page, /^State/i).selectOption({ label: state });
+  await inputAfterLabel(page, /Zip Code/i).fill(zipCode);
+  await inputAfterLabel(page, /Est\. Employee Lives/i).fill(String(employeeCount));
+  await selectAfterLabel(page, /^Status/i).selectOption({ label: clientStatus });
+}
+
+async function fillGroupBuilderTeam(page, { producerName = 'Boyd Ivey', accountManagerName = 'Boyd Ivey' } = {}) {
+  console.log('Filling Group Builder Account Team');
+
+  if (!urlHasHashFragment(page, 'groupBuilderTeam')) {
+    throw new Error('Expected to be on Group Builder Account Team step');
+  }
+
+  await page.locator('select[name="primarySalesLead"]').selectOption({ label: producerName });
+  await page.locator('select[name="primaryServiceLead"]').selectOption({ label: accountManagerName });
+}
+
+async function fillCreateEmployerForm(
+  page,
+  {
+    employerName,
+    employeeCount = 50,
+    state = 'Utah',
+    clientStatus = 'Prospect',
+    primaryRenewal = 'January',
+  } = {},
+) {
+  console.log(`Filling Create Employer form for ${employerName}`);
+
+  if (urlHasHashFragment(page, 'groupBuilderBasics')) {
+    await fillGroupBuilderBasics(page, {
+      employerName,
+      employeeCount,
+      state,
+      clientStatus,
+    });
+    return;
+  }
+
+  const nameFilled = await fillInputIfPresent(
+    page,
+    [
+      page.getByLabel(/Employer Name|Group Name|^Name$/i),
+      page.locator('input[name="name"]'),
+      page.locator('input[name="groupName"]'),
+      page.locator('input[id*="employer" i][id*="name" i]'),
+      page.locator('label').filter({ hasText: /Employer Name|Group Name|^Name$/i }).locator('xpath=following::input[1]'),
+    ],
+    employerName,
+  );
+
+  if (!nameFilled) {
+    throw new Error('Could not find employer name field on Create Employer form');
+  }
+
+  await fillInputIfPresent(
+    page,
+    [
+      page.getByLabel(/Employees|Employee Count|Est\. Employee Lives|# of Employees/i),
+      page.locator('input[name*="employee" i]'),
+      page.locator('input[name="employeeCount"]'),
+    ],
+    employeeCount,
+  );
+
+  await selectOptionIfPresent(
+    page,
+    [page.getByLabel(/^State$/i), page.locator('select[name*="state" i]'), page.locator('select#state')],
+    state,
+  );
+
+  await selectOptionIfPresent(
+    page,
+    [
+      page.getByLabel(/Primary Renewal|Renewal Month/i),
+      page.locator('select[name*="renewal" i]'),
+      page.locator('select[name="primaryRenewalMonth"]'),
+    ],
+    primaryRenewal,
+  );
+
+  await fillEmployerAddressIfPresent(page);
+}
+
+async function saveCreateEmployerForm(page) {
+  if (urlHasHashFragment(page, 'groupBuilderBasics')) {
+    await clickWizardSaveAndContinue(page, 'groupBuilderContacts');
+    return;
+  }
+
+  console.log('Saving Create Employer form');
+
+  const saveButton = page
+    .getByRole('button', { name: /^Save$|^Create Employer$|^Submit$/i })
+    .or(page.locator('button.btn-primary').filter({ hasText: /^Save$/i }));
+
+  await saveButton.first().waitFor({ state: 'visible', timeout: 30000 });
+  await saveButton.first().click();
+  await waitForPageReady(page, 120000);
+  await page.waitForURL(/\/group\/.*#groupUpdate/, { timeout: 120000 });
+  await page.getByText('About This Employer').waitFor({ timeout: 60000 });
+}
+
+async function completeGroupBuilderWizard(page, options = {}) {
+  const { employerName = null, producerName, accountManagerName } = options;
+
+  if (urlHasHashFragment(page, 'groupBuilderBasics')) {
+    await clickWizardSaveAndContinue(page, 'groupBuilderContacts');
+  }
+
+  if (urlHasHashFragment(page, 'groupBuilderContacts')) {
+    console.log('Continuing past Group Builder Contacts');
+    await clickWizardSaveAndContinue(page, 'groupBuilderTeam');
+  }
+
+  if (!urlHasHashFragment(page, 'groupBuilderTeam')) {
+    throw new Error(
+      `Expected Group Builder Account Team step before Create Employer (url: ${page.url()})`,
+    );
+  }
+
+  await fillGroupBuilderTeam(page, { producerName, accountManagerName });
+  console.log('Submitting Create Employer');
+  await page.getByRole('button', { name: /Create Employer/i }).click();
+  await waitForPageReady(page, 120000);
+  await page.waitForURL(/\/group\/.*#groupUpdate/, { timeout: 120000 });
+  await assertEmployerProfileLoaded(page, employerName);
+}
+
+async function createEmployer(page, options = {}) {
+  const {
+    employerName,
+    runNumber = null,
+    employeeCount = 50,
+    state = 'Utah',
+    clientStatus = 'Prospect',
+    producerName = 'Boyd Ivey',
+    accountManagerName = 'Boyd Ivey',
+    primaryRenewal = 'January',
+    screenshotPrefix = 'create-employer',
+  } = options;
+
+  const resolvedName = employerName || buildAutomationEmployerName(new Date(), runNumber);
+
+  await clickAddEmployer(page);
+
+  if (!urlHasHashFragment(page, 'groupBuilderBasics')) {
+    throw new Error(`Expected Group Builder Basics after Add Employer (url: ${page.url()})`);
+  }
+
+  const formScreenshotPath = path.join(OUTPUT_DIR, `${screenshotPrefix}-form.png`);
+  await page.screenshot({ path: formScreenshotPath, fullPage: false });
+  console.log(`Saved Create Employer form screenshot: ${formScreenshotPath}`);
+
+  await fillGroupBuilderBasics(page, {
+    employerName: resolvedName,
+    employeeCount,
+    state,
+    clientStatus,
+  });
+
+  await completeGroupBuilderWizard(page, {
+    employerName: resolvedName,
+    producerName,
+    accountManagerName,
+  });
+
+  const screenshotPath = path.join(OUTPUT_DIR, `${screenshotPrefix}-created.png`);
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved created employer screenshot: ${screenshotPath}`);
+
+  return {
+    employerName: resolvedName,
+    employerUrl: page.url(),
+    screenshotPath,
+    formScreenshotPath,
+  };
+}
+
+async function verifyEmployerInGroupList(page, employerName) {
+  console.log(`Verifying employer appears in group list: ${employerName}`);
+
+  if (!page.url().includes('#groupList')) {
+    await navigateToEmployers(page);
+  }
+
+  const searchInput = page
+    .getByPlaceholder(/Search .* Companies/i)
+    .or(page.locator('input[type="search"], input[placeholder*="Search" i]').first());
+
+  if ((await searchInput.count()) > 0) {
+    await searchInput.first().click();
+    await searchInput.first().fill(employerName);
+    await searchInput.first().press('Enter');
+  }
+
+  // Exact link name only — substring hasText would match "... 10" when looking for "... 1"
+  const employerLink = page.locator('table').getByRole('link', {
+    name: employerName,
+    exact: true,
+  });
+
+  await employerLink.waitFor({ state: 'visible', timeout: 30000 });
+
+  const screenshotPath = path.join(
+    OUTPUT_DIR,
+    `${employerName.toLowerCase().replace(/\s+/g, '-')}-group-list.png`,
+  );
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved group list verification screenshot: ${screenshotPath}`);
+
+  return {
+    found: true,
+    employerName,
+    employersUrl: page.url(),
+    screenshotPath,
+  };
+}
+
+async function startMarketingEventBasicsTab(page) {
+  console.log('Starting new Marketing Event from employer group');
+
+  const rfpTable = page.locator('#pending-active-pastDue-rfp-table');
+  await rfpTable.waitFor({ timeout: 30000 });
+  await rfpTable.locator('tbody tr').first().waitFor({ timeout: 30000 });
+
+  const startMarketingEventButton = page
+    .getByRole('button', { name: /Start Marketing Event/i })
+    .or(page.locator('button, a').filter({ hasText: /^Start Marketing Event/i }));
+
+  await startMarketingEventButton.first().waitFor({ state: 'visible', timeout: 30000 });
+  await startMarketingEventButton.first().scrollIntoViewIfNeeded();
+  await startMarketingEventButton.first().click();
+
+  const startMarketingEventMenuItem = page
+    .getByRole('menuitem', { name: /Start Marketing Event/i })
+    .or(page.getByRole('link', { name: /Start Marketing Event/i }))
+    .or(page.locator('a, button, li').filter({ hasText: /^Start Marketing Event$/i }));
+
+  await startMarketingEventMenuItem.first().waitFor({ state: 'visible', timeout: 10000 });
+  await startMarketingEventMenuItem.first().click();
+
+  await page.waitForURL(/#rfpBuilderBasics/, { timeout: 60000 });
+  await waitForPageReady(page, 120000);
+
+  const loading = page.getByText('Loading...');
+  if ((await loading.count()) > 0) {
+    await loading.first().waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
+  }
+
+  if (!page.url().includes('#rfpBuilderBasics')) {
+    throw new Error('Basics wizard URL did not load after Start Marketing Event');
+  }
+
+  const basicsMarkers = [
+    page.locator('label').filter({ hasText: /RFP Name/i }),
+    page.locator('label').filter({ hasText: /Effective Date/i }),
+    page.getByText(/Plan Design Attributes Template/i),
+    page.locator('.wizard-nav, .rfp-wizard-nav, .nav-tabs, .sidebar-collapse').getByText(/RFP Basics/i),
+  ];
+
+  let basicsFound = page.url().includes('#rfpBuilderBasics');
+  for (const marker of basicsMarkers) {
+    if ((await marker.count()) > 0 && (await marker.first().isVisible().catch(() => false))) {
+      basicsFound = true;
+      break;
+    }
+  }
+
+  if (!basicsFound) {
+    throw new Error('Basics tab or Basics wizard fields did not appear after Start Marketing Event');
+  }
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-rfp-wizard-basics.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved RFP wizard Basics screenshot: ${screenshotPath}`);
+
+  return {
+    wizardUrl: page.url(),
+    screenshotPath,
+  };
+}
+
+async function clickSaveAndContinue(page, expectedUrlPattern, buttonNamePattern = 'Save & Continue', timeout = 60000) {
+  const saveButton = page.getByRole('button', {
+    name: typeof buttonNamePattern === 'string' ? new RegExp(buttonNamePattern, 'i') : buttonNamePattern,
+  });
+  await saveButton.waitFor({ state: 'visible', timeout: 30000 });
+  await page.locator('#content-overlay, #content-loading-spinner').waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
+  await saveButton.first().evaluate((element) => element.click());
+
+  if (expectedUrlPattern) {
+    await waitForUrlMatch(page, expectedUrlPattern, timeout);
+  }
+
+  await waitForPageReady(page);
+}
+
+async function saveRfpBasicsAndContinue(page, employerName = 'Ace Testing', runNumber = null) {
+  console.log('Saving RFP Basics and continuing');
+
+  if (!page.url().includes('#rfpBuilderBasics')) {
+    throw new Error('Expected to be on RFP Basics wizard step');
+  }
+
+  const rfpName = buildAutomationRfpName(employerName, new Date(), runNumber);
+  await setRfpBasicsName(page, rfpName);
+
+  await clickSaveAndContinue(page, hashFragmentPattern('rfpBuilderPlanTypes'));
+
+  if (!page.url().includes('#rfpBuilderPlanTypes')) {
+    throw new Error('Did not navigate to Choose Benefit Types after saving RFP Basics');
+  }
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-rfp-wizard-benefit-types.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved Benefit Types screenshot: ${screenshotPath}`);
+
+  return {
+    wizardUrl: page.url(),
+    screenshotPath,
+    rfpName,
+    runNumber,
+  };
+}
+
+async function selectMedicalMarketingBenefitType(page) {
+  console.log('Selecting Medical, Vision, and Dental in Marketing column on Benefit Types');
+
+  if (!page.url().includes('#rfpBuilderPlanTypes')) {
+    throw new Error('Expected to be on Choose Benefit Types wizard step');
+  }
+
+  for (const benefitName of ['planTypeMedical', 'planTypeVision', 'planTypeDental']) {
+    const benefitCheckbox = page.locator(`input[name="${benefitName}"]`);
+    await benefitCheckbox.waitFor({ state: 'attached', timeout: 30000 });
+
+    if (!(await benefitCheckbox.isChecked())) {
+      await benefitCheckbox.check({ force: true });
+    }
+
+    if (!(await benefitCheckbox.isChecked())) {
+      throw new Error(`${benefitName} Marketing checkbox did not become checked`);
+    }
+  }
+
+  console.log('Verified Medical, Vision, and Dental Marketing checkboxes are checked');
+}
+
+async function verifyQuotesBenefitSubnavTabs(page, tabNames) {
+  for (const tabName of tabNames) {
+    const tab = page
+      .locator('.subnav-tab')
+      .filter({ has: page.getByRole('link', { name: tabName, exact: true }) })
+      .or(page.locator('.subnav-tab').filter({ hasText: new RegExp(`^${tabName}$`, 'i') }));
+
+    await tab.first().waitFor({ state: 'visible', timeout: 30000 });
+
+    const tabText = (await tab.first().textContent())?.trim();
+    if (!new RegExp(`^${tabName}$`, 'i').test(tabText || '')) {
+      throw new Error(`Expected Quotes subnav tab "${tabName}" was not found`);
+    }
+
+    console.log(`Verified Quotes subnav tab: ${tabName}`);
+  }
+}
+
+async function saveBenefitTypesAndContinue(page) {
+  console.log('Saving Benefit Types and continuing');
+
+  await selectMedicalMarketingBenefitType(page);
+  await clickSaveAndContinue(
+    page,
+    new RegExp(
+      `${hashFragmentPattern('rfpBuilderCommunityRatedPlans').source}|${hashFragmentPattern('rfpBuilderCommunityRatedPlansCensus').source}`,
+    ),
+  );
+  await waitForWizardBackgroundProcessing(page);
+
+  if (
+    !urlHasHashFragment(page, 'rfpBuilderCommunityRatedPlans') &&
+    !urlHasHashFragment(page, 'rfpBuilderCommunityRatedPlansCensus')
+  ) {
+    throw new Error('Did not navigate to Community Rated Plans after saving Benefit Types');
+  }
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-rfp-wizard-community-rated.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved Community Rated Plans screenshot: ${screenshotPath}`);
+
+  return {
+    wizardUrl: page.url(),
+    screenshotPath,
+  };
+}
+
+async function skipCommunityRatedCensusToDocuments(page) {
+  console.log('Skipping Community Rated census — not required after No/No answers');
+
+  if (urlHasHashFragment(page, 'rfpBuilderDocuments')) {
+    return;
+  }
+
+  if (!urlHasHashFragment(page, 'rfpBuilderCommunityRatedPlansCensus')) {
+    return;
+  }
+
+  await page.locator('#content-overlay, #content-loading-spinner').waitFor({ state: 'hidden', timeout: 30000 }).catch(() => {});
+
+  const saveButton = page.getByRole('button', { name: /Save & Continue/i });
+  await saveButton.first().waitFor({ state: 'visible', timeout: 30000 });
+  await saveButton.first().evaluate((element) => element.click());
+  await waitForUrlMatch(page, hashFragmentPattern('rfpBuilderDocuments'), 60000);
+  await page.getByText('Loading...').waitFor({ state: 'hidden', timeout: 30000 }).catch(() => {});
+}
+
+async function continueFromCommunityRatedPlansToDocuments(page) {
+  await answerCommunityRatedQuestionsNo(page);
+  await clickSaveAndContinue(
+    page,
+    new RegExp(
+      `${hashFragmentPattern('rfpBuilderDocuments').source}|${hashFragmentPattern('rfpBuilderCommunityRatedPlansCensus').source}`,
+    ),
+  );
+
+  if (urlHasHashFragment(page, 'rfpBuilderCommunityRatedPlansCensus')) {
+    await skipCommunityRatedCensusToDocuments(page);
+  }
+}
+
+async function clickNoForCommunityRatedQuestion(page, questionPattern, questionIndex = 0) {
+  const question = page.getByText(questionPattern);
+  await question.first().waitFor({ state: 'visible', timeout: 30000 });
+
+  const questionSection = page
+    .locator('div, section, fieldset, li, tr, .form-group, .panel, .card, .question')
+    .filter({ has: question })
+    .last();
+
+  const noAnswer = questionSection
+    .getByRole('button', { name: /^No$/i })
+    .or(questionSection.getByRole('radio', { name: /^No$/i }))
+    .or(questionSection.locator('label').filter({ hasText: /^No$/i }))
+    .or(
+      questionSection.locator(
+        '[data-value="no"], [data-value="false"], [value="no"], [value="false"], input[type="radio"][value="0"]',
+      ),
+    );
+
+  if ((await noAnswer.count()) > 0) {
+    await noAnswer.first().evaluate((element) => element.click());
+    console.log(`Selected No for Community Rated question matching ${questionPattern}`);
+    return;
+  }
+
+  const visibleNoButtons = page.getByRole('button', { name: /^No$/i });
+  if ((await visibleNoButtons.count()) > questionIndex) {
+    await visibleNoButtons.nth(questionIndex).evaluate((element) => element.click());
+    console.log(`Selected No via ordered button fallback for question ${questionIndex + 1}`);
+    return;
+  }
+
+  throw new Error(`Could not find No answer for Community Rated question matching ${questionPattern}`);
+}
+
+async function answerCommunityRatedQuestionsNo(page) {
+  console.log('Answering Community Rated questions with No');
+
+  if (!urlHasHashFragment(page, 'rfpBuilderCommunityRatedPlans')) {
+    return;
+  }
+
+  const questions = [
+    /Does this employer Group currently have a Community Rated Medical Plan\?/i,
+    /Do you want to explore community rated plans for their upcoming plan year\?/i,
+  ];
+
+  for (let index = 0; index < questions.length; index += 1) {
+    await clickNoForCommunityRatedQuestion(page, questions[index], index);
+  }
+}
+
+async function saveCommunityRatedPlansAndContinue(page) {
+  console.log('Saving Community Rated Plans and continuing');
+  await waitForWizardBackgroundProcessing(page);
+
+  if (urlHasHashFragment(page, 'rfpBuilderDocuments')) {
+    console.log('Already on RFP Quoting Documents — skipping Community Rated save');
+  } else if (urlHasHashFragment(page, 'rfpBuilderCommunityRatedPlansCensus')) {
+    await skipCommunityRatedCensusToDocuments(page);
+  } else if (urlHasHashFragment(page, 'rfpBuilderCommunityRatedPlans')) {
+    await continueFromCommunityRatedPlansToDocuments(page);
+  } else {
+    throw new Error('Expected to be on Community Rated Plans wizard step');
+  }
+
+  if (!urlHasHashFragment(page, 'rfpBuilderDocuments')) {
+    throw new Error('Did not navigate to RFP Quoting Documents after saving Community Rated Plans');
+  }
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-rfp-wizard-documents.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved RFP Quoting Documents screenshot: ${screenshotPath}`);
+
+  return {
+    wizardUrl: page.url(),
+    screenshotPath,
+  };
+}
+
+async function saveDocumentsForCarrierQuotingAndContinue(page) {
+  console.log('Saving Documents for Carrier Quoting and continuing');
+
+  if (!urlHasHashFragment(page, 'rfpBuilderDocuments')) {
+    await waitForUrlMatch(page, hashFragmentPattern('rfpBuilderDocuments'), 60000);
+  }
+
+  await waitForPageReady(page);
+  await waitForWizardBackgroundProcessing(page);
+
+  if (!urlHasHashFragment(page, 'rfpBuilderDocuments')) {
+    throw new Error(
+      `Expected to be on Documents for Carrier Quoting wizard step, got: ${page.url()}`,
+    );
+  }
+
+  await clickSaveAndContinue(page, hashFragmentPattern('rfpBuilderPlanDetails'));
+
+  if (!urlHasHashFragment(page, 'rfpBuilderPlanDetails')) {
+    throw new Error(
+      'Did not navigate to Verify Plan Details after saving Documents for Carrier Quoting',
+    );
+  }
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-rfp-wizard-plan-details.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved Verify Plan Details screenshot: ${screenshotPath}`);
+
+  return {
+    wizardUrl: page.url(),
+    screenshotPath,
+  };
+}
+
+async function openMedicalPlanDetails(page) {
+  if (page.url().includes('planType=medical')) {
+    return;
+  }
+
+  if (!page.url().includes('#rfpBuilderPlanDetails')) {
+    throw new Error('Expected to be on Verify Plan Details wizard step');
+  }
+
+  const medicalPlanDetails = page.locator('a[href*="#rfpBuilderPlanDetails"][href*="planType=medical"]');
+  if ((await medicalPlanDetails.count()) > 0) {
+    await medicalPlanDetails.first().click();
+    await waitForUrlMatch(page, /planType=medical/, 60000);
+    await waitForPageReady(page);
+    return;
+  }
+
+  const medicalSidebar = page.getByRole('link', { name: /Medical \(Marketing\)/i });
+  if ((await medicalSidebar.count()) > 0) {
+    await medicalSidebar.first().click();
+    await waitForUrlMatch(page, /planType=medical/, 60000);
+    await waitForPageReady(page);
+    return;
+  }
+
+  if (!page.url().includes('planType=medical')) {
+    throw new Error('Could not open Medical Plan Details from Verify Plan Details step');
+  }
+}
+
+async function continuePlanDetailsToDistribution(page) {
+  for (let step = 0; step < 10; step += 1) {
+    if (urlHasHashFragment(page, 'rfpBuilderDistributionList')) {
+      return;
+    }
+
+    await page
+      .locator('#content-loading-spinner, #content-overlay, .overlay')
+      .waitFor({ state: 'hidden', timeout: 120000 })
+      .catch(() => {});
+    await page.getByText('Loading...').waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
+    await waitForPageReady(page);
+
+    const saveButton = page.locator('button.save-button:not([disabled])').filter({
+      hasText: /Save & go to/i,
+    });
+    await saveButton.first().waitFor({ state: 'visible', timeout: 30000 });
+    const buttonLabel = (await saveButton.first().textContent())?.trim().replace(/\s+/g, ' ') || '';
+
+    await saveButton.first().evaluate((element) => element.click());
+
+    if (/Save & go to Distribution/i.test(buttonLabel)) {
+      await waitForUrlMatch(page, hashFragmentPattern('rfpBuilderDistributionList'), 120000);
+      return;
+    }
+
+    if (/Save & go to Dental/i.test(buttonLabel)) {
+      await waitForUrlMatch(page, /planType=dental/, 120000);
+    } else if (/Save & go to Vision/i.test(buttonLabel)) {
+      await waitForUrlMatch(page, /planType=vision/, 120000);
+    } else {
+      await page.waitForTimeout(2000);
+    }
+
+    await waitForPageReady(page);
+  }
+
+  if (!urlHasHashFragment(page, 'rfpBuilderDistributionList')) {
+    throw new Error('Did not navigate to Distribution List after saving Plan Details');
+  }
+}
+
+async function saveMedicalPlanDetailsAndContinue(page) {
+  console.log('Saving Plan Details and continuing through benefit steps to Distribution');
+
+  await openMedicalPlanDetails(page);
+
+  if (!page.url().includes('#rfpBuilderPlanDetails')) {
+    throw new Error('Expected to be on Verify Plan Details wizard step');
+  }
+
+  await continuePlanDetailsToDistribution(page);
+
+  await page.getByText(/Who Gets the RFP\?/i).waitFor({ state: 'visible', timeout: 120000 });
+  await page.getByText('Loading...').waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
+  await waitForPageReady(page);
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-rfp-wizard-distribution-list.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved Distribution List screenshot: ${screenshotPath}`);
+
+  return {
+    wizardUrl: page.url(),
+    screenshotPath,
+  };
+}
+
+async function selectMedicalFromDistributionListDropdown(page) {
+  console.log('Opening ellipsis menu on Who Gets the RFP and selecting Medical');
+
+  if (!urlHasHashFragment(page, 'rfpBuilderDistributionList')) {
+    if (page.url().includes('#rfpBuilderPlanDetails')) {
+      console.log('Resuming Plan Details navigation before Distribution List step');
+      await continuePlanDetailsToDistribution(page);
+    } else {
+      await waitForUrlMatch(page, hashFragmentPattern('rfpBuilderDistributionList'), 60000);
+    }
+  }
+
+  if (!urlHasHashFragment(page, 'rfpBuilderDistributionList')) {
+    throw new Error(
+      `Expected to be on Who Gets the RFP (Distribution List) wizard step, got: ${page.url()}`,
+    );
+  }
+
+  await page.getByText(/Who Gets the RFP\?/i).waitFor({ state: 'visible', timeout: 120000 });
+  await page.getByText('Loading...').waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
+  await waitForPageReady(page);
+
+  const selected = await clickMedicalFromEllipsisMenu(page);
+
+  if (!selected) {
+    throw new Error('Could not select Medical from the Distribution List ellipsis menu');
+  }
+
+  await page.waitForURL(/#gridInit\/medical/, { timeout: 60000 });
+  await waitForPageReady(page);
+
+  const currentUrl = page.url();
+  if (!currentUrl.endsWith('#gridInit/medical')) {
+    throw new Error(
+      `Expected URL to end with #gridInit/medical after selecting Medical, got: ${currentUrl}`,
+    );
+  }
+
+  const quotesTab = page.locator('.group-nav-tabs-container li.group-nav-tab.quotes.active-tab');
+  await quotesTab.waitFor({ state: 'visible', timeout: 30000 });
+
+  const quotesTabText = (await quotesTab.textContent())?.trim();
+  if (!/quotes/i.test(quotesTabText || '')) {
+    throw new Error('Quotes tab is not highlighted after selecting Medical from Distribution List');
+  }
+
+  console.log('Verified Quotes tab is highlighted and URL ends with #gridInit/medical');
+
+  await verifyQuotesBenefitSubnavTabs(page, ['Vision', 'Dental']);
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-rfp-medical-quotes.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved Medical Quotes screenshot: ${screenshotPath}`);
+
+  return {
+    quotesUrl: currentUrl,
+    screenshotPath,
+    verifiedTabs: ['Vision', 'Dental'],
+  };
+}
+
+async function clickMedicalFromEllipsisMenu(page) {
+  return page.evaluate(() => {
+    const icons = [...document.querySelectorAll('[data-icon="ellipsis-vertical"]')];
+
+    for (const icon of icons) {
+      const toggle = icon.closest('a, button');
+      if (!toggle) {
+        continue;
+      }
+
+      toggle.click();
+
+      const openMenu = document.querySelector('.dropdown-menu.show, .dropdown.open .dropdown-menu');
+      if (!openMenu) {
+        continue;
+      }
+
+      const medicalLink = [...openMenu.querySelectorAll('a')].find((anchor) => {
+        const text = (anchor.textContent || '').trim();
+        return text === 'Medical' || (text.includes('Medical') && /medical/i.test(anchor.href));
+      });
+
+      if (medicalLink) {
+        medicalLink.click();
+        return true;
+      }
+
+      toggle.click();
+    }
+
+    return false;
+  });
+}
+
+async function selectMedicalFromRfpBasicsEllipsis(page) {
+  console.log('Opening ellipsis menu on RFP Basics and selecting Medical');
+
+  if (!page.url().includes('#rfpBuilderBasics')) {
+    throw new Error('Expected to be on RFP Basics wizard step');
+  }
+
+  await waitForPageReady(page);
+  await page.locator('label').filter({ hasText: /RFP Name/i }).first().waitFor({ state: 'visible', timeout: 30000 });
+  await page.getByText('Loading...').waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
+
+  const selected = await clickMedicalFromEllipsisMenu(page);
+
+  if (!selected) {
+    throw new Error('Could not select Medical from the RFP Basics ellipsis menu');
+  }
+
+  await page.waitForURL(/#gridInit\/medical|planType=medical|rfpBuilderPlanDetails.*medical/i, {
+    timeout: 60000,
+  });
+  await waitForPageReady(page);
+  await page.locator('button.nav-quote-create').waitFor({ state: 'visible', timeout: 60000 });
+
+  const currentUrl = page.url();
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-rfp-basics-medical-selected.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Selected Medical from RFP Basics ellipsis menu`);
+  console.log(`Current URL: ${currentUrl}`);
+  console.log(`Saved RFP Basics Medical screenshot: ${screenshotPath}`);
+
+  return {
+    medicalUrl: currentUrl,
+    screenshotPath,
+  };
+}
+
+async function clickAddQuoteButton(page) {
+  console.log('Clicking Add Quote + button');
+
+  await page.waitForURL(/#gridInit\/medical/, { timeout: 60000 });
+  await waitForPageReady(page);
+  await page.getByText('Loading...').waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
+
+  const quotesTab = page.locator('.group-nav-tabs-container li.group-nav-tab.quotes.active-tab');
+  await quotesTab.waitFor({ state: 'visible', timeout: 60000 }).catch(() => {});
+
+  const addQuoteButton = page.locator('button.nav-quote-create');
+  await addQuoteButton.waitFor({ state: 'visible', timeout: 60000 });
+  await addQuoteButton.scrollIntoViewIfNeeded();
+  await addQuoteButton.click();
+
+  const addQuoteDialog = page.locator('.bootbox.modal.in').filter({ hasText: /Create New Quote/i });
+  await addQuoteDialog.waitFor({ state: 'visible', timeout: 30000 });
+  await addQuoteDialog.locator('label[for="insuranceType"]').waitFor({ state: 'visible', timeout: 30000 });
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-add-quote-opened.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log('Clicked Add Quote + button');
+  console.log(`Saved Add Quote screenshot: ${screenshotPath}`);
+
+  return {
+    quotesUrl: page.url(),
+    screenshotPath,
+  };
+}
+
+async function getCreateNewQuoteDialog(page) {
+  const dialog = page.locator('.bootbox.modal.in').filter({ hasText: /Create New Quote/i });
+  await dialog.waitFor({ state: 'visible', timeout: 30000 });
+  return dialog;
+}
+
+async function selectCarrierInCreateNewQuoteModal(page, searchText = 'a') {
+  console.log(`Selecting Carrier in Create New Quote modal with search: "${searchText}"`);
+
+  const dialog = await getCreateNewQuoteDialog(page);
+  await dialog.locator('label[for="carrierId"]').waitFor({ state: 'visible', timeout: 30000 });
+  await page.waitForFunction(
+    () => document.querySelector('#carrierId')?.classList.contains('select2-hidden-accessible'),
+    { timeout: 30000 },
+  );
+
+  const carrierDropdown = dialog.locator('.carrier-input .select2-selection');
+  await carrierDropdown.waitFor({ state: 'attached', timeout: 30000 });
+  await carrierDropdown.evaluate((element) => element.click());
+
+  let searchField = page.locator('.select2-container--open input.select2-search__field');
+  if ((await searchField.count()) === 0) {
+    await page.evaluate(() => {
+      const select = window.jQuery?.('#carrierId');
+      if (select?.data('select2')) {
+        select.select2('open');
+      }
+    });
+  }
+
+  searchField = page.locator('.select2-container--open input.select2-search__field');
+  await searchField.waitFor({ state: 'visible', timeout: 10000 });
+  await searchField.fill(searchText);
+  await page.locator('.select2-results__option--highlighted').waitFor({ state: 'visible', timeout: 30000 });
+  await page.keyboard.press('Enter');
+
+  await page.waitForFunction(() => {
+    const carrierId = document.querySelector('#carrierId')?.value;
+    const carrierName = document.querySelector('#select2-carrierId-container')?.textContent?.trim();
+    return Boolean(carrierId && carrierName);
+  });
+
+  const selectedCarrier = await page.evaluate(() => ({
+    carrierId: document.querySelector('#carrierId')?.value,
+    carrierName: document.querySelector('#select2-carrierId-container')?.textContent?.trim(),
+  }));
+
+  console.log(`Selected carrier: ${selectedCarrier.carrierName}`);
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-create-quote-carrier-selected.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved Create New Quote carrier screenshot: ${screenshotPath}`);
+
+  return {
+    carrierId: selectedCarrier.carrierId,
+    carrierName: selectedCarrier.carrierName,
+    screenshotPath,
+  };
+}
+
+async function uploadQuoteDocumentInCreateNewQuoteModal(
+  page,
+  fileName = 'Doc - SBC Silver 5000 ValueCareTest.pdf',
+) {
+  console.log(`Uploading quote document via Click to upload: ${fileName}`);
+
+  const dialog = await getCreateNewQuoteDialog(page);
+  const fixturePath = path.join(__dirname, '..', 'ps-9250', 'fixtures', fileName);
+
+  if (!fs.existsSync(fixturePath)) {
+    throw new Error(`Upload fixture not found: ${fixturePath}`);
+  }
+
+  const fixtureSizeBytes = fs.statSync(fixturePath).size;
+  const minimumFixtureSizeBytes = 500;
+  if (fixtureSizeBytes < minimumFixtureSizeBytes) {
+    throw new Error(
+      `Upload fixture "${fileName}" is only ${fixtureSizeBytes} bytes. Expected at least ${minimumFixtureSizeBytes} bytes with real SBC content.`,
+    );
+  }
+
+  const dropzone = dialog.locator('#quotesDropzone');
+  await dropzone.waitFor({ state: 'visible', timeout: 30000 });
+  await dropzone.getByText('Click to upload').waitFor({ state: 'visible', timeout: 30000 });
+
+  const [fileChooser] = await Promise.all([
+    page.waitForEvent('filechooser', { timeout: 30000 }),
+    dropzone.click(),
+  ]);
+
+  console.log(`Selecting "${fileName}" in Open dialog`);
+  await fileChooser.setFiles(fixturePath);
+
+  const uploadedPreview = dialog.locator('#quotesDropzone .dz-preview.dz-success');
+  await uploadedPreview.waitFor({ state: 'visible', timeout: 60000 });
+
+  const uploadedFile = await page.evaluate(() => ({
+    fileName: document.querySelector('#quotesDropzone .dz-filename')?.textContent?.trim(),
+  }));
+
+  const expectedNameFragment = path.basename(fileName, path.extname(fileName));
+  if (!uploadedFile.fileName?.toLowerCase().includes(expectedNameFragment.toLowerCase())) {
+    throw new Error(
+      `Expected uploaded file name to include "${expectedNameFragment}", got: ${uploadedFile.fileName || 'none'}`,
+    );
+  }
+
+  console.log(`Uploaded quote document: ${uploadedFile.fileName}`);
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-create-quote-document-uploaded.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved Create New Quote upload screenshot: ${screenshotPath}`);
+
+  return {
+    fileName: uploadedFile.fileName,
+    fixturePath,
+    screenshotPath,
+  };
+}
+
+async function submitCreateNewQuoteModal(page) {
+  console.log('Clicking Create New Quote button');
+
+  const dialog = await getCreateNewQuoteDialog(page);
+  const createButton = dialog.getByRole('button', { name: 'Create New Quote', exact: true });
+  await createButton.waitFor({ state: 'visible', timeout: 30000 });
+  await createButton.scrollIntoViewIfNeeded();
+  await createButton.click();
+
+  await page.waitForURL(/#planGroupQuoteCreate\/medical/, { timeout: 60000 });
+  await waitForPageReady(page);
+  await page.getByText('Loading...').waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
+
+  await page.getByText('Quote - Medical', { exact: true }).first().waitFor({ state: 'visible', timeout: 60000 });
+  await page.getByRole('button', { name: /Save Changes/i }).waitFor({ state: 'visible', timeout: 60000 });
+
+  const quoteUrl = page.url();
+  if (!quoteUrl.includes('#planGroupQuoteCreate/medical')) {
+    throw new Error(`Expected quote create URL after submitting modal, got: ${quoteUrl}`);
+  }
+
+  console.log(`Opened quote create view: ${quoteUrl}`);
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-quote-create-submitted.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved Create New Quote submit screenshot: ${screenshotPath}`);
+
+  return {
+    quoteUrl,
+    screenshotPath,
+  };
+}
+
+async function waitForQuoteProcessingComplete(page) {
+  console.log('Waiting for Plansight AI document processing to complete');
+
+  if (!page.url().includes('#planGroupQuoteCreate/medical')) {
+    throw new Error('Expected to be on Quote - Medical create view');
+  }
+
+  const processingMessage = page.getByText(
+    'Plansight is processing your document(s). Please check back soon.',
+    { exact: true },
+  );
+  const completedMessage = page.getByText(
+    'Plansight processing completed. Fill the quote using a source below.',
+    { exact: true },
+  );
+
+  const sawProcessing = await processingMessage
+    .first()
+    .waitFor({ state: 'visible', timeout: 120000 })
+    .then(() => true)
+    .catch(() => false);
+
+  if (sawProcessing) {
+    console.log(
+      'Detected processing message: Plansight is processing your document(s). Please check back soon.',
+    );
+  } else {
+    console.log('Processing message not visible; waiting for completion text');
+  }
+
+  await completedMessage.first().waitFor({ state: 'visible', timeout: 600000 });
+  console.log(
+    'Detected completion message: Plansight processing completed. Fill the quote using a source below.',
+  );
+
+  console.log('Waiting 3 seconds after processing completion before document selection');
+  await page.waitForTimeout(3000);
+
+  return { sawProcessing };
+}
+
+async function assertQuoteDocumentPreviewReady(page) {
+  const fileNotFound = page.getByText('The selected file could not be found', { exact: true });
+  const isVisible = await fileNotFound.isVisible().catch(() => false);
+  if (isVisible) {
+    throw new Error('Document preview failed: The selected file could not be found');
+  }
+
+  console.log('Document preview loaded without file-not-found error');
+}
+
+async function assertNoQuoteErrors(page) {
+  const errorGettingQuote = page.getByText('Error getting quote', { exact: true });
+  if (await errorGettingQuote.isVisible().catch(() => false)) {
+    throw new Error('Quote page showed: Error getting quote');
+  }
+}
+
+async function selectUploadedQuoteDocumentSource(
+  page,
+  documentLabel = 'Aetna National - Doc - SBC Silver 5000 ValueCareTest.pdf',
+) {
+  console.log(`Selecting quote document source: ${documentLabel}`);
+
+  if (!page.url().includes('#planGroupQuoteCreate/medical')) {
+    throw new Error('Expected to be on Quote - Medical create view');
+  }
+
+  await page.getByText('Quote - Medical', { exact: true }).first().waitFor({ state: 'visible', timeout: 60000 });
+
+  const documentDropdown = page.locator('#select2-documentSelect-container');
+  await documentDropdown.waitFor({ state: 'visible', timeout: 60000 });
+
+  const documentNameFragment = 'Doc - SBC Silver 5000 ValueCareTest.pdf';
+
+  await documentDropdown.scrollIntoViewIfNeeded();
+  await documentDropdown.click();
+
+  let searchField = page.locator('.select2-container--open input.select2-search__field');
+  if ((await searchField.count()) === 0) {
+    await page.evaluate(() => {
+      const select = window.jQuery?.('#documentSelect');
+      if (select?.data('select2')) {
+        select.select2('open');
+      }
+    });
+  }
+
+  const option = page
+    .locator('.select2-results__option')
+    .filter({ hasText: documentNameFragment })
+    .first();
+  await option.waitFor({ state: 'visible', timeout: 30000 });
+  await option.scrollIntoViewIfNeeded();
+  await option.click();
+
+  await page.waitForFunction(
+    (fragment) => {
+      const selected = document.querySelector('#select2-documentSelect-container')?.textContent?.trim();
+      return selected?.includes(fragment);
+    },
+    documentNameFragment,
+    { timeout: 30000 },
+  );
+
+  const fileNotFound = page.getByText('The selected file could not be found', { exact: true });
+  await fileNotFound.waitFor({ state: 'hidden', timeout: 120000 }).catch(async () => {
+    throw new Error('Document preview failed: The selected file could not be found');
+  });
+
+  await assertQuoteDocumentPreviewReady(page);
+
+  const selectedDocument = await page.evaluate(() =>
+    document.querySelector('#select2-documentSelect-container')?.textContent?.trim(),
+  );
+  console.log(`Selected quote document source: ${selectedDocument}`);
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-quote-document-selected.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved quote document source screenshot: ${screenshotPath}`);
+
+  return {
+    documentLabel: selectedDocument,
+    quoteUrl: page.url(),
+    screenshotPath,
+  };
+}
+
+async function saveQuoteChanges(page) {
+  await assertNoQuoteErrors(page);
+
+  const saveButton = page.getByRole('button', { name: /Save Changes/i });
+  await saveButton.waitFor({ state: 'visible', timeout: 30000 });
+  await saveButton.scrollIntoViewIfNeeded();
+  await saveButton.click();
+  console.log('Clicked Save Changes');
+
+  await waitForPageReady(page);
+  await page.getByText('Loading...').waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
+  await assertNoQuoteErrors(page);
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-quote-save-changes.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved quote Save Changes screenshot: ${screenshotPath}`);
+
+  return {
+    quoteUrl: page.url(),
+    screenshotPath,
+  };
+}
+
+async function closeQuoteMedicalPage(page) {
+  console.log('Clicking X to close Quote - Medical page');
+
+  await page.getByText('Loading...').waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
+  await assertNoQuoteErrors(page);
+
+  const quoteHeader = page.getByText('Quote - Medical', { exact: true }).first();
+  const quotePageOpen = await quoteHeader.isVisible().catch(() => false);
+
+  if (!quotePageOpen && page.url().includes('#gridInit/medical')) {
+    console.log('Quote - Medical page is already closed');
+    return {
+      quotesUrl: page.url(),
+      alreadyClosed: true,
+      screenshotPath: null,
+    };
+  }
+
+  await quoteHeader.waitFor({ state: 'visible', timeout: 30000 });
+  await page.getByRole('button', { name: /Save Changes/i }).waitFor({ state: 'visible', timeout: 30000 });
+
+  const iconClose = page.locator('[data-icon="xmark"]:visible, [data-icon="times"]:visible').first();
+  if ((await iconClose.count()) > 0) {
+    const clickable = iconClose.locator('xpath=ancestor::button[1] | ancestor::a[1]').first();
+    if ((await clickable.count()) > 0) {
+      await clickable.click();
+    } else {
+      await iconClose.click({ force: true });
+    }
+  } else {
+    const clicked = await page.evaluate(() => {
+      const titleElement = [...document.querySelectorAll('*')].find(
+        (element) =>
+          element.childElementCount <= 1 &&
+          (element.textContent || '').trim() === 'Quote - Medical',
+      );
+
+      if (!titleElement) {
+        return false;
+      }
+
+      let container = titleElement.parentElement;
+      for (let depth = 0; depth < 12 && container; depth += 1) {
+        const closeCandidates = [...container.querySelectorAll('button, a, [role="button"], .close')].filter(
+          (element) => {
+            const rect = element.getBoundingClientRect();
+            if (rect.width <= 0 || rect.height <= 0) {
+              return false;
+            }
+
+            if (/save changes/i.test(element.textContent || '')) {
+              return false;
+            }
+
+            const text = (element.textContent || '').trim();
+            const hasCloseIcon = Boolean(
+              element.querySelector('[data-icon="xmark"], [data-icon="times"], .fa-times, .fa-xmark'),
+            );
+
+            return text === '×' || text === 'X' || text === '✕' || hasCloseIcon || element.classList.contains('close');
+          },
+        );
+
+        if (closeCandidates.length > 0) {
+          closeCandidates.sort(
+            (left, right) => right.getBoundingClientRect().right - left.getBoundingClientRect().right,
+          );
+          closeCandidates[0].click();
+          return true;
+        }
+
+        container = container.parentElement;
+      }
+
+      const topRightClose = [...document.querySelectorAll('button, a, [role="button"], .close')].filter(
+        (element) => {
+          const rect = element.getBoundingClientRect();
+          if (rect.width <= 0 || rect.height <= 0 || rect.top > 160) {
+            return false;
+          }
+
+          if (/save changes/i.test(element.textContent || '')) {
+            return false;
+          }
+
+          const text = (element.textContent || '').trim();
+          const hasCloseIcon = Boolean(
+            element.querySelector('[data-icon="xmark"], [data-icon="times"], .fa-times, .fa-xmark'),
+          );
+
+          return text === '×' || text === 'X' || text === '✕' || hasCloseIcon || element.classList.contains('close');
+        },
+      );
+
+      if (topRightClose.length > 0) {
+        topRightClose.sort(
+          (left, right) => right.getBoundingClientRect().right - left.getBoundingClientRect().right,
+        );
+        topRightClose[0].click();
+        return true;
+      }
+
+      return false;
+    });
+
+    if (!clicked) {
+      throw new Error('Could not find visible close button on Quote - Medical page');
+    }
+  }
+
+  console.log('Clicked close button on Quote - Medical page');
+
+  await page.waitForURL(/#gridInit\/medical/, { timeout: 120000 });
+  await waitForPageReady(page);
+  await page.getByText('Loading...').waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
+  await quoteHeader.waitFor({ state: 'hidden', timeout: 30000 }).catch(() => {});
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-quote-medical-closed.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved Quote - Medical closed screenshot: ${screenshotPath}`);
+
+  return {
+    quotesUrl: page.url(),
+    alreadyClosed: false,
+    screenshotPath,
+  };
+}
+
+async function verifyMedicalQuoteOnQuotesGrid(
+  page,
+  {
+    carrierName = 'Aetna National',
+    planName = '1 - Silver 5000 ValueCare',
+  } = {},
+) {
+  console.log(
+    `Verifying Medical quotes grid on #gridInit/medical for ${carrierName} column and plan "${planName}"`,
+  );
+
+  await page.waitForURL(/#gridInit\/medical/, { timeout: 120000 });
+  await waitForPageReady(page);
+  await page.getByText('Loading...').waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
+
+  const currentUrl = page.url();
+  if (!currentUrl.includes('#gridInit/medical')) {
+    throw new Error(`Expected URL to include #gridInit/medical, got: ${currentUrl}`);
+  }
+
+  const medicalTab = page.locator('.subnav-tab.medical.active-tab');
+  await medicalTab.waitFor({ state: 'visible', timeout: 30000 });
+  console.log('Verified Medical tab is selected on quotes grid');
+
+  const verification = await page.evaluate(({ carrierName, planName }) => {
+    const normalize = (value) => (value || '').replace(/\s+/g, ' ').trim();
+    const planFragment = 'Silver 5000 ValueCare';
+
+    const visibleElements = [...document.querySelectorAll('th, td, div, span, a, button, label')].filter(
+      (element) => {
+        const rect = element.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      },
+    );
+
+    const headerCandidates = visibleElements.filter(
+      (element) => normalize(element.textContent) === carrierName,
+    );
+
+    if (headerCandidates.length === 0) {
+      return {
+        ok: false,
+        reason: `Column heading "${carrierName}" not found on Medical quotes grid`,
+      };
+    }
+
+    const header = headerCandidates.sort(
+      (left, right) => left.getBoundingClientRect().top - right.getBoundingClientRect().top,
+    )[0];
+    const headerRect = header.getBoundingClientRect();
+
+    const planCandidates = visibleElements.filter((element) => {
+      const text = normalize(element.textContent);
+      return text === planName || text.includes(planFragment);
+    });
+
+    if (planCandidates.length === 0) {
+      return {
+        ok: false,
+        reason: `Plan row "${planName}" not found on Medical quotes grid`,
+      };
+    }
+
+    const planInCarrierColumn = planCandidates.some((element) => {
+      const rect = element.getBoundingClientRect();
+      return rect.left < headerRect.right + 40 && rect.right > headerRect.left - 40;
+    });
+
+    if (!planInCarrierColumn) {
+      return {
+        ok: false,
+        reason: `Plan "${planName}" was not found in the "${carrierName}" column`,
+      };
+    }
+
+    const matchedPlan = normalize(
+      planCandidates.find((element) => {
+        const rect = element.getBoundingClientRect();
+        return rect.left < headerRect.right + 40 && rect.right > headerRect.left - 40;
+      })?.textContent,
+    );
+
+    return {
+      ok: true,
+      carrierName,
+      planName: matchedPlan || planName,
+      quotesUrl: window.location.href,
+    };
+  }, { carrierName, planName });
+
+  if (!verification.ok) {
+    throw new Error(verification.reason);
+  }
+
+  console.log(
+    `Verified ${carrierName} column contains plan "${planName}" on Medical quotes grid`,
+  );
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-medical-quotes-grid-verified.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved Medical quotes grid verification screenshot: ${screenshotPath}`);
+
+  return {
+    ...verification,
+    screenshotPath,
+  };
+}
+
+async function waitForQuoteProcessingAndSaveChanges(page) {
+  const processing = await waitForQuoteProcessingComplete(page);
+  const document = await selectUploadedQuoteDocumentSource(page);
+  const saved = await saveQuoteChanges(page);
+
+  return {
+    quoteUrl: saved.quoteUrl,
+    sawProcessing: processing.sawProcessing,
+    documentLabel: document.documentLabel,
+    screenshotPath: saved.screenshotPath,
+  };
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+async function clickBackToEmployerProfile(page, employerName = 'Ace Testing') {
+  console.log(`Clicking Back to ${employerName} Profile link`);
+
+  await waitForPageReady(page);
+
+  const backLink = page.getByRole('link', {
+    name: new RegExp(`Back to ${escapeRegExp(employerName)} Profile`, 'i'),
+  });
+  await backLink.first().waitFor({ state: 'visible', timeout: 30000 });
+  await backLink.first().scrollIntoViewIfNeeded();
+  await backLink.first().click();
+
+  await page.waitForURL(/\/group\/.*#groupUpdate/, { timeout: 60000 });
+  await waitForPageReady(page);
+  await page.getByText('About This Employer').waitFor({ timeout: 60000 });
+
+  const screenshotPath = path.join(
+    OUTPUT_DIR,
+    `${employerName.toLowerCase().replace(/\s+/g, '-')}-profile-return.png`,
+  );
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved ${employerName} profile return screenshot: ${screenshotPath}`);
+
+  return {
+    employerName,
+    employerUrl: page.url(),
+    screenshotPath,
+  };
+}
+
+function buildEmployerDateRfpNamePrefix(employerName, date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Denver',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+
+  const year = parts.find((part) => part.type === 'year')?.value;
+  const month = parts.find((part) => part.type === 'month')?.value;
+  const day = parts.find((part) => part.type === 'day')?.value;
+
+  return `${employerName} ${year}-${month}-${day}`;
+}
+
+function buildAutomationRfpName(employerName = 'Ace Testing', date = new Date(), runNumber = null) {
+  const base = `${buildEmployerDateRfpNamePrefix(employerName, date)} Automation`;
+  if (runNumber == null) {
+    return base;
+  }
+
+  return `${base} ${runNumber}`;
+}
+
+async function setRfpBasicsName(page, rfpName) {
+  console.log(`Setting RFP Name to "${rfpName}"`);
+
+  if (!page.url().includes('#rfpBuilderBasics')) {
+    throw new Error('Expected to be on RFP Basics wizard step');
+  }
+
+  await waitForPageReady(page);
+  await page.locator('label').filter({ hasText: /RFP Name/i }).first().waitFor({ state: 'visible', timeout: 30000 });
+
+  const rfpNameInput = page
+    .getByLabel(/RFP Name/i)
+    .or(page.locator('input[name="name"]'))
+    .or(page.locator('input[id*="rfp" i][id*="name" i]'))
+    .or(
+      page.locator('label').filter({ hasText: /RFP Name/i }).locator('xpath=following::input[1]'),
+    );
+
+  await rfpNameInput.first().waitFor({ state: 'visible', timeout: 30000 });
+  await rfpNameInput.first().click();
+  await rfpNameInput.first().fill(rfpName);
+  await rfpNameInput.first().blur();
+
+  const currentValue = await rfpNameInput.first().inputValue();
+  if (currentValue.trim() !== rfpName) {
+    throw new Error(`RFP Name field value "${currentValue}" did not match expected "${rfpName}"`);
+  }
+}
+
+function getEmployerDateRfpNamePrefixes(employerName, date = new Date()) {
+  const prefixes = [buildEmployerDateRfpNamePrefix(employerName, date)];
+  const yesterday = new Date(date);
+  yesterday.setDate(yesterday.getDate() - 1);
+  prefixes.push(buildEmployerDateRfpNamePrefix(employerName, yesterday));
+
+  return [...new Set(prefixes)];
+}
+
+function extractRfpIdFromUrl(url) {
+  const match = url.match(/\/group\/[^/]+\/([^/#?]+)/);
+  if (!match || match[1] === 'none') {
+    return null;
+  }
+
+  return match[1];
+}
+
+async function verifyRequestForProposalsRfpRow(
+  page,
+  employerName = 'Ace Testing',
+  date = new Date(),
+  rfpId = null,
+  expectedRfpName = null,
+) {
+  const expectedPrefixes = getEmployerDateRfpNamePrefixes(employerName, date);
+  if (expectedRfpName) {
+    console.log(
+      `Verifying Request for Proposals row for created RFP: ${expectedRfpName}${rfpId ? ` (${rfpId})` : ''}`,
+    );
+  } else if (rfpId) {
+    console.log(
+      `Verifying Request for Proposals row for RFP ${rfpId} and name matching: ${expectedPrefixes.map((prefix) => `${prefix}*`).join(' or ')}`,
+    );
+  } else {
+    console.log(
+      `Verifying Request for Proposals row matching: ${expectedPrefixes.map((prefix) => `${prefix}*`).join(' or ')}`,
+    );
+  }
+
+  await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
+  await waitForPageReady(page);
+  await page.getByText('About This Employer').waitFor({ timeout: 60000 });
+
+  let matchedName = null;
+  let rfpNames = [];
+
+  for (let attempt = 0; attempt < 5 && !matchedName; attempt += 1) {
+    if (attempt > 0) {
+      await page.waitForTimeout(2000);
+      await waitForPageReady(page);
+    }
+
+    const rfpTable = page.locator('#pending-active-pastDue-rfp-table').first();
+    await rfpTable.scrollIntoViewIfNeeded();
+    await rfpTable.waitFor({ timeout: 30000 });
+    await rfpTable.locator('tbody tr').first().waitFor({ timeout: 30000 });
+
+    const sectionTitle = await page.evaluate(() => {
+      const table = document.querySelector('#pending-active-pastDue-rfp-table');
+      const section = table?.closest('.ibox, .panel, section, .widget, .card, [class*="section"]');
+      const heading = section?.querySelector('h1, h2, h3, h4, h5, .ibox-title, .panel-heading');
+      return heading?.textContent?.trim() || null;
+    });
+
+    if (sectionTitle) {
+      console.log(`Found RFP table section: ${sectionTitle}`);
+    }
+
+    const tableWrapper = page.locator('#pending-active-pastDue-rfp-table').first().locator('xpath=ancestor::div[contains(@class,"dataTables_wrapper")]');
+    const maxPages = 10;
+
+    for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {
+      rfpNames = (await rfpTable.locator('tbody tr .name').allTextContents())
+        .map((name) => name.trim())
+        .filter(Boolean);
+
+      if (expectedRfpName) {
+        matchedName = await rfpTable.evaluate(
+          (table, { currentRfpId, expectedName }) => {
+            for (const row of table.querySelectorAll('tbody tr')) {
+              const name = row.querySelector('.name')?.textContent?.trim() || '';
+              if (name !== expectedName) {
+                continue;
+              }
+
+              if (!currentRfpId) {
+                return name;
+              }
+
+              const rowLinksRfp = [...row.querySelectorAll('a')].some((anchor) =>
+                anchor.href.includes(`/${currentRfpId}`),
+              );
+              if (rowLinksRfp) {
+                return name;
+              }
+            }
+
+            return null;
+          },
+          { currentRfpId: rfpId, expectedName: expectedRfpName },
+        );
+
+        if (!matchedName) {
+          matchedName = rfpNames.find((name) => name === expectedRfpName) || null;
+        }
+
+        if (matchedName) {
+          break;
+        }
+      } else if (rfpId) {
+        matchedName = await rfpTable.evaluate(
+          (table, { currentRfpId, currentEmployerName, prefixes }) => {
+            for (const row of table.querySelectorAll('tbody tr')) {
+              const name = row.querySelector('.name')?.textContent?.trim() || '';
+              const rowLinksRfp = [...row.querySelectorAll('a')].some((anchor) =>
+                anchor.href.includes(`/${currentRfpId}`),
+              );
+
+              if (
+                rowLinksRfp &&
+                name.startsWith(currentEmployerName) &&
+                prefixes.some((prefix) => name.startsWith(prefix))
+              ) {
+                return name;
+              }
+
+              if (rowLinksRfp && name.startsWith(currentEmployerName)) {
+                return name;
+              }
+            }
+
+            return null;
+          },
+          { currentRfpId: rfpId, currentEmployerName: employerName, prefixes: expectedPrefixes },
+        );
+
+        if (matchedName) {
+          break;
+        }
+      }
+
+      if (!matchedName && !expectedRfpName) {
+        matchedName = rfpNames.find((name) =>
+          expectedPrefixes.some((prefix) => name.startsWith(prefix)),
+        );
+      }
+      if (matchedName) {
+        break;
+      }
+
+      const nextPage = tableWrapper.locator('.paginate_button.next:not(.disabled), .next:not(.disabled)').first();
+      if ((await nextPage.count()) === 0) {
+        break;
+      }
+
+      await nextPage.click();
+      await page.waitForTimeout(1000);
+    }
+  }
+
+  if (!matchedName) {
+    const targetLabel = expectedRfpName || expectedPrefixes.map((prefix) => `${prefix}*`).join('" or "');
+    throw new Error(
+      `No Request for Proposals row found matching "${targetLabel}". Found: ${rfpNames.slice(0, 5).join(' | ') || 'none'}`,
+    );
+  }
+
+  console.log(`Verified Request for Proposals row: ${matchedName}`);
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-rfp-row-verified.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved Request for Proposals verification screenshot: ${screenshotPath}`);
+
+  return {
+    expectedPrefix: expectedPrefixes[0],
+    expectedPrefixes,
+    expectedRfpName,
+    matchedName,
+    rfpId,
+    screenshotPath,
+  };
+}
+
+async function openRfpFromMarketingTableByName(
+  page,
+  { matchedName, rfpId = null, employerName = 'Ace Testing' } = {},
+) {
+  if (!matchedName && !rfpId) {
+    throw new Error('openRfpFromMarketingTableByName requires matchedName or rfpId');
+  }
+
+  console.log(
+    `Clicking Name link to open RFP: ${matchedName || employerName}${rfpId ? ` (${rfpId})` : ''}`,
+  );
+
+  const rfpTable = page.locator('#pending-active-pastDue-rfp-table').first();
+  await rfpTable.scrollIntoViewIfNeeded();
+  await rfpTable.waitFor({ timeout: 30000 });
+
+  let nameLink;
+  if (rfpId) {
+    nameLink = rfpTable.locator(`tbody tr a[href*="/${rfpId}"]`).first();
+  } else {
+    nameLink = rfpTable
+      .locator('tbody tr')
+      .filter({ has: page.locator('.name', { hasText: matchedName }) })
+      .locator('a')
+      .first();
+  }
+
+  await nameLink.waitFor({ timeout: 30000 });
+  await nameLink.scrollIntoViewIfNeeded();
+
+  const linkText = (await nameLink.locator('.name').textContent())?.trim() || matchedName;
+  await nameLink.evaluate((element) => element.click());
+
+  if (rfpId) {
+    const escapedRfpId = rfpId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    await page.waitForURL(new RegExp(`${escapedRfpId}.*#`), { timeout: 60000 });
+  }
+
+  await page.waitForURL(/#rfpBuilderBasics|#marketResponse|#gridInit/, { timeout: 60000 });
+  await waitForPageReady(page);
+
+  const loading = page.getByText('Loading...');
+  if ((await loading.count()) > 0) {
+    await loading.first().waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
+  }
+
+  const rfpOpened =
+    page.url().includes('#rfpBuilderBasics') ||
+    page.url().includes('#marketResponse') ||
+    page.url().includes('#gridInit');
+
+  if (!rfpOpened) {
+    throw new Error(`RFP did not open after clicking Name link. Current URL: ${page.url()}`);
+  }
+
+  if (page.url().includes('#rfpBuilderBasics')) {
+    const basicsLabel = page.locator('label').filter({ hasText: /RFP Name/i }).first();
+    await basicsLabel.waitFor({ state: 'visible', timeout: 30000 });
+  }
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'ps-9250-rfp-opened-from-name.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Opened RFP from Name link: ${linkText || matchedName}`);
+  console.log(`Saved opened RFP screenshot: ${screenshotPath}`);
+
+  return {
+    rfpUrl: page.url(),
+    matchedName: linkText || matchedName,
+    rfpId,
+    screenshotPath,
+  };
+}
+
+async function openShadybrookLumberRfp(page) {
+  console.log('Waiting for Request for Proposals section to load');
+
+  const rfpTable = page.locator('#pending-active-pastDue-rfp-table');
+  await rfpTable.waitFor({ timeout: 30000 });
+  await rfpTable.locator('tbody tr').first().waitFor({ timeout: 30000 });
+
+  const rfpHeader = page.getByText('Request for Proposals');
+  if (await rfpHeader.count()) {
+    await rfpHeader.first().waitFor({ timeout: 15000 });
+  }
+
+  const shadybrookLink = rfpTable.locator('a[href*="#marketResponse"]').filter({
+    has: page.locator('.name', { hasText: 'Shadybrook Lumber' }),
+  });
+  await shadybrookLink.first().waitFor({ timeout: 30000 });
+  await shadybrookLink.first().scrollIntoViewIfNeeded();
+  await shadybrookLink.first().evaluate((element) => element.click());
+
+  await page.waitForURL(/#marketResponse/, { timeout: 30000 });
+  await page.getByText('Shadybrook Lumber').first().waitFor({ timeout: 15000 });
+  await page.getByText('Market Response').first().waitFor({ timeout: 15000 });
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'shadybrook-lumber-rfp.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved Shadybrook Lumber RFP screenshot: ${screenshotPath}`);
+
+  return {
+    rfpUrl: page.url(),
+    rfpName: 'Shadybrook Lumber',
+    screenshotPath,
+  };
+}
+
+async function openQuotesTab(page) {
+  console.log('Clicking Quotes tab');
+
+  await page.getByText('Shadybrook Lumber').first().waitFor({ timeout: 15000 });
+
+  const quotesTab = page
+    .locator('.group-nav-tabs-container')
+    .getByRole('link', { name: 'Quotes', exact: true });
+  await quotesTab.waitFor({ timeout: 15000 });
+  await quotesTab.click();
+
+  await page.waitForURL(/#gridInit\/medical/, { timeout: 30000 });
+  await page.locator('a[href*="#gridInit/medical"]').first().waitFor({ timeout: 30000 });
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'shadybrook-quotes.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved Quotes tab screenshot: ${screenshotPath}`);
+
+  return {
+    quotesUrl: page.url(),
+    screenshotPath,
+  };
+}
+
+async function openCancerTab(page) {
+  console.log('Clicking Cancer tab');
+
+  const medicalTab = page.locator('a[href*="#gridInit/medical"]');
+  await medicalTab.first().waitFor({ timeout: 30000 });
+
+  const cancerTab = page.locator('a[href*="#gridInit/cancer"]');
+  await cancerTab.first().waitFor({ state: 'visible', timeout: 90000 });
+  await cancerTab.first().click();
+
+  await page.waitForURL(/#gridInit\/cancer/, { timeout: 30000 });
+  await page.locator('.subnav-tab.cancer.active-tab').waitFor({ timeout: 15000 });
+
+  console.log('Waiting 3 seconds on Cancer page');
+  await page.waitForTimeout(3000);
+
+  const screenshotPath = path.join(OUTPUT_DIR, 'shadybrook-cancer-quotes.png');
+  await page.screenshot({ path: screenshotPath, fullPage: false });
+  console.log(`Saved Cancer tab screenshot: ${screenshotPath}`);
+
+  return {
+    cancerQuotesUrl: page.url(),
+    screenshotPath,
+  };
+}
+
+const BENEFITS_PLAN_GROUP_ROWS = [
+  { label: 'Reconstructive Surgery', cssKey: 'reconstructiveSurgery' },
+  { label: 'Experimental Treatment', cssKey: 'experimentalTreatment' },
+  { label: 'ICU Benefit', cssKey: 'icuBenefit' },
+  { label: 'Anti-Nausea Meds', cssKey: 'antiNauseaMeds' },
+  { label: 'Transportation', cssKey: 'transportation' },
+  { label: 'Ambulance', cssKey: 'ambulance' },
+  { label: 'Lodging', cssKey: 'lodging', alternatives: ['Loging'] },
+];
+
+async function waitForCancerBenefitsGrid(page, timeout = 60000) {
+  await page.locator('.ibox-title-plansight').filter({ hasText: 'Plan Group' }).first().waitFor({
+    timeout,
+  });
+  await page.locator('.plansight-sub-row-benefits-reconstructiveSurgery').first().waitFor({
+    timeout,
+  });
+}
+
+async function findBenefitRow(page, { label, cssKey, alternatives = [] }) {
+  const selector = `.plansight-sub-row-benefits-${cssKey}`;
+  const row = page.locator(selector).first();
+
+  if ((await row.count()) > 0) {
+    await row.scrollIntoViewIfNeeded();
+    const text = (await row.textContent())?.trim();
+    if (text) {
+      return text;
+    }
+  }
+
+  const names = [label, ...alternatives];
+  for (const name of names) {
+    const textRow = page.getByText(name, { exact: true }).first();
+    if ((await textRow.count()) > 0) {
+      await textRow.scrollIntoViewIfNeeded();
+      if (await textRow.isVisible()) {
+        return name;
+      }
+    }
+  }
+
+  return null;
+}
+
+async function verifyBenefitsPlanGroupRows(page) {
+  console.log('Verifying Benefits Plan Group rows');
+
+  await page.waitForTimeout(2000);
+  await waitForCancerBenefitsGrid(page);
+
+  const rowResults = [];
+  const verifiedRows = [];
+  const missingRows = [];
+
+  for (const row of BENEFITS_PLAN_GROUP_ROWS) {
+    console.log(`Checking row: ${row.label}`);
+    const foundAs = await findBenefitRow(page, row);
+
+    const found = Boolean(foundAs);
+    rowResults.push({
+      rowName: row.label,
+      found,
+      matchedAs: foundAs,
+      searchedNames: [row.label, ...(row.alternatives || [])],
+      cssSelector: `.plansight-sub-row-benefits-${row.cssKey}`,
+    });
+
+    if (found) {
+      verifiedRows.push(foundAs);
+      console.log(`Verified row: ${foundAs}`);
+    } else {
+      missingRows.push(row.label);
+      console.log(`Missing row: ${row.label}`);
+    }
+  }
+
+  const report = {
+    verified: missingRows.length === 0,
+    summary: {
+      total: rowResults.length,
+      found: verifiedRows.length,
+      missing: missingRows.length,
+    },
+    rows: rowResults,
+    verifiedRows,
+    missingRows,
+  };
+
+  saveBenefitsVerificationReport(report, page.url());
+
+  return report;
+}
+
+function saveBenefitsVerificationReport(report, pageUrl, baseUrl = process.env.BASE_URL) {
+  const timestamp = new Date().toISOString();
+  const jsonReport = {
+    jiraTicket: process.env.JIRA_TICKET || null,
+    baseUrl: baseUrl || null,
+    pageUrl,
+    timestamp,
+    summary: report.summary,
+    verified: report.verified,
+    rows: report.rows,
+  };
+
+  const jsonPath = path.join(OUTPUT_DIR, 'benefits-verification-report.json');
+  fs.writeFileSync(jsonPath, JSON.stringify(jsonReport, null, 2));
+  console.log(`Saved benefits verification report: ${jsonPath}`);
+
+  const markdownLines = [
+    '# Benefits Plan Group Verification Report',
+    '',
+    `- **Jira Ticket:** ${process.env.JIRA_TICKET || 'n/a'}`,
+    `- **Base URL:** ${baseUrl || 'n/a'}`,
+    `- **Page URL:** ${pageUrl}`,
+    `- **Timestamp:** ${timestamp}`,
+    `- **Result:** ${report.verified ? 'PASS' : 'FAIL'}`,
+    `- **Summary:** ${report.summary.found}/${report.summary.total} rows found`,
+    '',
+    '| Row | Status | Matched As | Searched Names |',
+    '| --- | --- | --- | --- |',
+  ];
+
+  for (const row of report.rows) {
+    markdownLines.push(
+      `| ${row.rowName} | ${row.found ? 'FOUND' : 'NOT FOUND'} | ${row.matchedAs || '-'} | ${row.searchedNames.join(', ')} |`,
+    );
+  }
+
+  if (report.missingRows.length > 0) {
+    markdownLines.push('', '## Missing Rows', '');
+    for (const rowName of report.missingRows) {
+      markdownLines.push(`- ${rowName}`);
+    }
+  }
+
+  const markdownPath = path.join(OUTPUT_DIR, 'benefits-verification-report.md');
+  fs.writeFileSync(markdownPath, `${markdownLines.join('\n')}\n`);
+  console.log(`Saved benefits verification report: ${markdownPath}`);
+
+  return {
+    jsonPath,
+    markdownPath,
+  };
+}
+
+async function verifyReconstructiveSurgeryBenefit(page) {
+  return verifyBenefitsPlanGroupRows(page);
+}
+
+async function saveRecording(page, outputName = 'login-recording') {
+  const video = page.video();
+  if (!video) {
+    return null;
+  }
+
+  if (!page.isClosed()) {
+    await page.close();
+  }
+
+  const webmPath = await video.path();
+  const mp4Path = path.join(OUTPUT_DIR, `${outputName}.mp4`);
+
+  const { execSync } = require('child_process');
+  execSync(
+    `ffmpeg -y -i "${webmPath}" -c:v libx264 -pix_fmt yuv420p "${mp4Path}"`,
+    { stdio: 'ignore' },
+  );
+
+  console.log(`Saved recording: ${mp4Path}`);
+  return mp4Path;
+}
+
+module.exports = {
+  OUTPUT_DIR,
+  AUTH_STATE_PATH,
+  getAuthStatePathForBaseUrl,
+  isLoggedIn,
+  authStateMatchesBaseUrl,
+  saveAuthState,
+  ensureRememberDeviceChecked,
+  sessionIsValid,
+  ensureLoggedIn,
+  login,
+  verifyDashboard,
+  navigateToEmployers,
+  openAceTestingEmployer,
+  openEmployerGroup,
+  buildAutomationEmployerName,
+  clickAddEmployer,
+  fillGroupBuilderBasics,
+  fillGroupBuilderTeam,
+  fillCreateEmployerForm,
+  saveCreateEmployerForm,
+  completeGroupBuilderWizard,
+  createEmployer,
+  verifyEmployerInGroupList,
+  startMarketingEventBasicsTab,
+  saveRfpBasicsAndContinue,
+  setRfpBasicsName,
+  buildAutomationRfpName,
+  selectMedicalMarketingBenefitType,
+  answerCommunityRatedQuestionsNo,
+  saveBenefitTypesAndContinue,
+  saveCommunityRatedPlansAndContinue,
+  saveDocumentsForCarrierQuotingAndContinue,
+  saveMedicalPlanDetailsAndContinue,
+  selectMedicalFromDistributionListDropdown,
+  selectMedicalFromRfpBasicsEllipsis,
+  clickAddQuoteButton,
+  selectCarrierInCreateNewQuoteModal,
+  uploadQuoteDocumentInCreateNewQuoteModal,
+  submitCreateNewQuoteModal,
+  waitForQuoteProcessingComplete,
+  selectUploadedQuoteDocumentSource,
+  saveQuoteChanges,
+  closeQuoteMedicalPage,
+  verifyMedicalQuoteOnQuotesGrid,
+  waitForQuoteProcessingAndSaveChanges,
+  clickBackToEmployerProfile,
+  verifyRequestForProposalsRfpRow,
+  openRfpFromMarketingTableByName,
+  buildEmployerDateRfpNamePrefix,
+  getEmployerDateRfpNamePrefixes,
+  extractRfpIdFromUrl,
+  openShadybrookLumberRfp,
+  openQuotesTab,
+  openCancerTab,
+  verifyBenefitsPlanGroupRows,
+  verifyReconstructiveSurgeryBenefit,
+  saveBenefitsVerificationReport,
+  saveRecording,
+};
