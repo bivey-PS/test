@@ -6,7 +6,7 @@ import * as path from 'path';
  * folder is dropped into the `plansight` repo.
  */
 export const env = {
-  baseUrl: process.env.BASE_URL ?? 'https://www.test.plansight.com',
+  baseUrl: process.env.BASE_URL ?? 'https://test.plansight.com',
 
   broker: {
     email: process.env.BROKER_EMAIL ?? '',

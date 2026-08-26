@@ -1,6 +1,6 @@
 # PS-9250 Smoke Test Automation (Playwright)
 
-Automated smoke suite for **www.test.plansight.com**, implementing the
+Automated smoke suite for **test.plansight.com**, implementing the
 [PS-9250](https://plansight.atlassian.net/browse/PS-9250) "Smoke Test Plan"
 (Minimum Gate + Full Smoke S1–S10).
 
@@ -76,14 +76,24 @@ All environment-specific values are injected via `.env` (see `.env.example`):
 Tests requiring missing credentials/fixtures **skip** with a clear message rather
 than failing, so the suite can be listed and partially run without secrets.
 
-## IMPORTANT — confirm selectors before first real run
+## Authentication (confirmed live)
 
-Because the live DOM of `test.plansight.com` was not available when this suite
-was authored, the locators in `tests/helpers/selectors.ts` are **best-guess
-placeholders** based on the PS-9250 plan and the app's stack (Laravel +
-jQuery/DataTables). Before relying on results:
+`test.plansight.com` uses **Auth0 Universal Login** (identifier-first): the app
+redirects to `devauth.plansight.com`, where you enter the email (`#username`) →
+**Continue** → password (`#password`) → **Continue**. The `login()` helper and
+the `login.*` selectors are already wired for this real flow and verified live up
+to the password step (a valid `BROKER_*` credential completes it). Whoever runs
+the suite needs network egress to both `test.plansight.com` and
+`devauth.plansight.com`.
 
-1. Run `npm run codegen` against `https://www.test.plansight.com` to capture the
+## IMPORTANT — confirm the remaining selectors before first real run
+
+The **login** selectors are confirmed against the live site. The rest of the
+locators in `tests/helpers/selectors.ts` (groups, RFP wizard, quotes, plansights,
+templates, etc.) are **best-guess placeholders** based on the PS-9250 plan and the
+app's stack (Laravel + jQuery/DataTables). Before relying on results:
+
+1. Run `npm run codegen` against `https://test.plansight.com` to capture the
    real locators for each step.
 2. Update `tests/helpers/selectors.ts` (single source of truth) accordingly.
 3. Prefer stable attributes (`data-test`, `id`) over text where possible.

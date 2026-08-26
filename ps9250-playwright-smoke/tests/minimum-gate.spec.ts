@@ -13,7 +13,7 @@ import { resolve } from './helpers/resolve';
  * upload the SBC doc, let AI process, and confirm it lands in the Medical grid.
  *
  * Selectors are best-guess (see helpers/selectors.ts). Confirm against
- * www.test.plansight.com with `npm run codegen` and update selectors.ts.
+ * test.plansight.com with `npm run codegen` and update selectors.ts.
  */
 test.describe('PS-9250 Minimum Gate', () => {
   test('Broker can create an RFP and add a Medical quote end-to-end', { tag: '@min-gate' }, async ({ broker }) => {

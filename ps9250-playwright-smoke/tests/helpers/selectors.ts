@@ -4,7 +4,7 @@
  * IMPORTANT (for the reviewer wiring this into `plansight`):
  * These selectors are best-guess placeholders derived from the PS-9250 plan and
  * the app's known stack (Laravel + jQuery/DataTables). Confirm each against the
- * real DOM on www.test.plansight.com (use `npm run codegen` to capture real
+ * real DOM on test.plansight.com (use `npm run codegen` to capture real
  * locators) and update values here in ONE place. Prefer stable attributes
  * (data-test / id) over text where possible.
  *
@@ -26,10 +26,13 @@ export type SelectorSpec =
 
 export const selectors = {
   login: {
-    // TODO: confirm against real login page
-    email: { label: /email/i } as SelectorSpec,
-    password: { label: /password/i } as SelectorSpec,
-    submit: { role: 'button', name: /log ?in|sign ?in/i } as SelectorSpec,
+    // Confirmed against https://test.plansight.com (2026-08-26): auth is Auth0
+    // Universal Login (redirects to devauth.plansight.com), identifier-first:
+    //   #username -> "Continue" -> #password -> "Continue".
+    email: { css: '#username' } as SelectorSpec,
+    continueButton: { role: 'button', name: /continue|next/i } as SelectorSpec,
+    password: { css: '#password' } as SelectorSpec,
+    submit: { role: 'button', name: /continue|log ?in|sign ?in|submit/i } as SelectorSpec,
     form: { css: 'form' } as SelectorSpec,
   },
   shell: {

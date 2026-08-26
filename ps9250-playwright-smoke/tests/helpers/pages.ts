@@ -17,14 +17,27 @@ export class LoginPage {
   }
 
   async expectLoginFormVisible() {
-    // S1.1 — login page loads, form visible, no 500
-    await expect(resolve(this.page, selectors.login.form)).toBeVisible();
+    // S1.1 — login page loads, no 500, email/identifier field visible
+    await expect(resolve(this.page, selectors.login.email).first()).toBeVisible();
   }
 
+  /**
+   * Handles Plansight's email-first, two-step login:
+   *   Email address -> Continue -> Password -> submit.
+   * Also tolerates a single-page form (fills password if already present).
+   */
   async login(email: string, password: string) {
-    await resolve(this.page, selectors.login.email).fill(email);
-    await resolve(this.page, selectors.login.password).fill(password);
-    await resolve(this.page, selectors.login.submit).click();
+    await resolve(this.page, selectors.login.email).first().fill(email);
+
+    const passwordField = resolve(this.page, selectors.login.password).first();
+    if (!(await passwordField.isVisible().catch(() => false))) {
+      // Two-step: advance past the email step.
+      await resolve(this.page, selectors.login.continueButton).first().click();
+      await passwordField.waitFor({ state: 'visible', timeout: 20_000 });
+    }
+
+    await passwordField.fill(password);
+    await resolve(this.page, selectors.login.submit).first().click();
     await this.page.waitForLoadState('networkidle');
   }
 }
