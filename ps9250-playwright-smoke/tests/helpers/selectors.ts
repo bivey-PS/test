@@ -36,9 +36,10 @@ export const selectors = {
     form: { css: 'form' } as SelectorSpec,
   },
   shell: {
-    // Landmarks proving we are "in the app"
+    // Landmarks proving we are "in the app". Prefer Plansight-specific nav
+    // (Groups) over bare `nav` — Auth0 / intermediate pages can also have nav.
     mainNav: { css: 'nav, [role="navigation"]' } as SelectorSpec,
-    navGroups: { role: 'link', name: /groups/i } as SelectorSpec,
+    navGroups: { role: 'link', name: /groups|employers/i } as SelectorSpec,
     navRfps: { role: 'link', name: /rfps?|request for proposals/i } as SelectorSpec,
     navTemplates: { role: 'link', name: /templates/i } as SelectorSpec,
     userMenu: { css: '[data-test="user-menu"], .user-menu' } as SelectorSpec,
@@ -47,7 +48,9 @@ export const selectors = {
   groups: {
     list: { css: 'table, .group-list, [data-test="group-list"]' } as SelectorSpec,
     anyRow: { css: 'table tbody tr' } as SelectorSpec,
-    groupLinkByName: (name: string) => ({ role: 'link', name } as SelectorSpec),
+    // exact: true — substring name would open "Automation 10" when targeting "Automation 1"
+    groupLinkByName: (name: string) =>
+      ({ role: 'link', name, exact: true } as SelectorSpec),
     groupHome: { css: '[data-test="group-home"], .group-profile' } as SelectorSpec,
     createGroupButton: { role: 'button', name: /add group|create group|new group/i } as SelectorSpec,
   },
@@ -70,8 +73,11 @@ export const selectors = {
   },
   rfpList: {
     section: { text: /request for proposals/i } as SelectorSpec,
-    rowByName: (name: string) => ({ role: 'row', name } as SelectorSpec),
-    nameLink: (name: string) => ({ role: 'link', name } as SelectorSpec),
+    // exact: true — Playwright string `name` is a substring match unless exact
+    rowByName: (name: string) =>
+      ({ role: 'row', name, exact: true } as SelectorSpec),
+    nameLink: (name: string) =>
+      ({ role: 'link', name, exact: true } as SelectorSpec),
   },
   quotes: {
     addQuoteButton: { role: 'button', name: /add quote|\+/i } as SelectorSpec,

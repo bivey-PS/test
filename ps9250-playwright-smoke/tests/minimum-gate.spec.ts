@@ -47,7 +47,10 @@ test.describe('PS-9250 Minimum Gate', () => {
     await test.step('S3.3 Choose Benefit Types → Medical, Vision, Dental → Save & Continue', async () => {
       for (const bt of [selectors.rfpWizard.benefitTypeMedical, selectors.rfpWizard.benefitTypeVision, selectors.rfpWizard.benefitTypeDental]) {
         const el = resolve(page, bt).first();
-        if (await el.isVisible().catch(() => false)) await el.click();
+        // Minimum Gate must fail closed — soft-skipping missing benefit types
+        // produced false PASSes with no Medical/Vision/Dental selected.
+        await expect(el).toBeVisible();
+        await el.click();
       }
       await resolve(page, selectors.rfpWizard.saveAndContinue).first().click();
       await page.waitForLoadState('networkidle');
@@ -55,10 +58,12 @@ test.describe('PS-9250 Minimum Gate', () => {
 
     await test.step('S3.3.1 Community Rated Plans → No on both → skip census → Save & Continue', async () => {
       const noButtons = resolve(page, selectors.rfpWizard.communityRatedNo);
-      const count = await noButtons.count().catch(() => 0);
-      for (let i = 0; i < count; i++) {
-        await noButtons.nth(i).click().catch(() => {});
-      }
+      // Expect both Community Rated answers; zero matches used to no-op PASS.
+      await expect
+        .poll(async () => noButtons.count(), { timeout: 30_000 })
+        .toBeGreaterThanOrEqual(2);
+      await noButtons.nth(0).click();
+      await noButtons.nth(1).click();
       const skip = resolve(page, selectors.rfpWizard.skipCensus).first();
       if (await skip.isVisible().catch(() => false)) await skip.click();
       await resolve(page, selectors.rfpWizard.saveAndContinue).first().click();
@@ -85,11 +90,11 @@ test.describe('PS-9250 Minimum Gate', () => {
 
     await test.step('S3.7 Back to employer profile link loads employer profile', async () => {
       const back = resolve(page, selectors.rfpWizard.backToEmployerProfile).first();
-      if (await back.isVisible().catch(() => false)) {
-        await back.click();
-        await page.waitForLoadState('networkidle');
-        await expectNoServerError(page);
-      }
+      await expect(back).toBeVisible();
+      await back.click();
+      await page.waitForLoadState('networkidle');
+      await expectNoServerError(page);
+      await expect(resolve(page, selectors.groups.groupHome).first()).toBeVisible();
     });
 
     await test.step('S3.8 Request for Proposals shows a row for the created RFP', async () => {
@@ -104,9 +109,11 @@ test.describe('PS-9250 Minimum Gate', () => {
 
     await test.step('S3.10 RFP Basics → ellipsis → Medical row', async () => {
       const ellipsis = resolve(page, selectors.rfpWizard.distributionEllipsis).first();
-      if (await ellipsis.isVisible().catch(() => false)) await ellipsis.click();
+      await expect(ellipsis).toBeVisible();
+      await ellipsis.click();
       const medical = resolve(page, selectors.quotes.medicalTab).first();
-      if (await medical.isVisible().catch(() => false)) await medical.click();
+      await expect(medical).toBeVisible();
+      await medical.click();
     });
 
     await test.step('S3.11 Medical Quotes → Add Quote (+)', async () => {
@@ -135,14 +142,19 @@ test.describe('PS-9250 Minimum Gate', () => {
 
     await test.step('S3.15 Quote - Medical → wait for AI processing → select document → Save Changes → close', async () => {
       // AI/Planfacts processing can take a while; wait for a Save Changes affordance.
+      // Swallowing the wait used to leave Save unclicked while the step PASSed.
       const save = resolve(page, selectors.quotes.saveChanges).first();
-      await save.waitFor({ state: 'visible', timeout: 60_000 }).catch(() => {});
-      if (await save.isVisible().catch(() => false)) await save.click();
+      await save.waitFor({ state: 'visible', timeout: 60_000 });
+      await save.click();
     });
 
     await test.step('S3.16 Medical quotes grid → Aetna National column → 1 - Silver 5000 ValueCare', async () => {
-      await expect(resolve(page, selectors.quotes.grid).first()).toBeVisible();
-      // TODO: assert the specific carrier column / plan cell once selectors confirmed.
+      const grid = resolve(page, selectors.quotes.grid).first();
+      await expect(grid).toBeVisible();
+      // Require the plan fragment inside the grid — a bare grid visibility check
+      // false-PASSed when the quote/plan never landed.
+      await expect(grid.getByText(/Silver\s*5000\s*ValueCare/i).first()).toBeVisible();
+      await expect(grid.getByText(/Aetna/i).first()).toBeVisible();
     });
   });
 });

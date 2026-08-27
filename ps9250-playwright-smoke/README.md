@@ -75,6 +75,8 @@ All environment-specific values are injected via `.env` (see `.env.example`):
 
 Tests requiring missing credentials/fixtures **skip** with a clear message rather
 than failing, so the suite can be listed and partially run without secrets.
+`EXISTING_GROUP_NAME` / `RFP_GROUP_NAME` are **required** for group/RFP flows —
+the suite refuses to open a random first list row (wrong-employer mutation).
 
 ## Authentication (confirmed live)
 

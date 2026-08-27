@@ -29,6 +29,7 @@ export const test = base.extend<Fixtures>({
     const login = new LoginPage(page);
     await login.goto();
     await login.login(env.carrier.email, env.carrier.password);
+    await new AppShell(page).expectInApp();
     await use(page);
   },
 });
