@@ -9,6 +9,23 @@ import { env } from './env';
  * selectors.ts and are marked with TODO for the reviewer to confirm.
  */
 
+function appHostname(): string {
+  try {
+    return new URL(env.baseUrl).hostname.toLowerCase();
+  } catch {
+    return 'test.plansight.com';
+  }
+}
+
+/** True when the page is on the configured Plansight app host (not Auth0). */
+export function isOnAppHost(page: Page): boolean {
+  try {
+    return new URL(page.url()).hostname.toLowerCase() === appHostname();
+  } catch {
+    return false;
+  }
+}
+
 export class LoginPage {
   constructor(private page: Page) {}
 
@@ -25,6 +42,7 @@ export class LoginPage {
    * Handles Plansight's email-first, two-step login:
    *   Email address -> Continue -> Password -> submit.
    * Also tolerates a single-page form (fills password if already present).
+   * Does not complete MFA; callers must assert app landing via AppShell.expectInApp.
    */
   async login(email: string, password: string) {
     await resolve(this.page, selectors.login.email).first().fill(email);
@@ -38,7 +56,14 @@ export class LoginPage {
 
     await passwordField.fill(password);
     await resolve(this.page, selectors.login.submit).first().click();
-    await this.page.waitForLoadState('networkidle');
+    // Prefer returning to the app host over networkidle alone (Auth0 can sit
+    // idle on MFA / error pages that still satisfy networkidle).
+    await this.page
+      .waitForURL((url) => url.hostname.toLowerCase() === appHostname(), {
+        timeout: 45_000,
+      })
+      .catch(() => {});
+    await this.page.waitForLoadState('networkidle').catch(() => {});
   }
 }
 
@@ -46,8 +71,14 @@ export class AppShell {
   constructor(private page: Page) {}
 
   async expectInApp() {
-    // Landed in app when main navigation is present
-    await expect(resolve(this.page, selectors.shell.mainNav).first()).toBeVisible();
+    // Fail closed: bare `nav` can appear on Auth0 / intermediate pages.
+    // Require the configured app host + a Plansight shell landmark (Groups).
+    await expect
+      .poll(() => isOnAppHost(this.page), { timeout: 45_000 })
+      .toBe(true);
+    await expect(resolve(this.page, selectors.shell.navGroups).first()).toBeVisible({
+      timeout: 45_000,
+    });
   }
 
   async expectNavReachable() {
@@ -76,13 +107,19 @@ export class GroupsPage {
     await expect(resolve(this.page, selectors.groups.list).first()).toBeVisible();
   }
 
-  /** Open a named group, or the first available row if name is empty (S2.2). */
+  /**
+   * Open a named employer group (S2.2).
+   * Requires a non-empty name — opening "first row" silently mutates / verifies
+   * the wrong employer when EXISTING_GROUP_NAME / RFP_GROUP_NAME are unset.
+   */
   async openGroup(name: string) {
-    if (name) {
-      await resolve(this.page, selectors.groups.groupLinkByName(name)).first().click();
-    } else {
-      await resolve(this.page, selectors.groups.anyRow).first().click();
+    const trimmed = (name || '').trim();
+    if (!trimmed) {
+      throw new Error(
+        'EXISTING_GROUP_NAME / RFP_GROUP_NAME must be set to an exact employer name; refusing to open the first list row.',
+      );
     }
+    await resolve(this.page, selectors.groups.groupLinkByName(trimmed)).first().click();
     await this.page.waitForLoadState('networkidle');
   }
 
