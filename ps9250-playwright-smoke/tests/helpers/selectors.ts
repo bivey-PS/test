@@ -84,7 +84,8 @@ export const selectors = {
     carrierCombobox: { label: /carrier/i } as SelectorSpec,
     uploadDropzone: { text: /click to upload|drag|upload/i } as SelectorSpec,
     fileInput: { css: 'input[type="file"]' } as SelectorSpec,
-    submitQuote: { role: 'button', name: /submit|create|save/i } as SelectorSpec,
+    // Do not match bare "Save" — that hits page-level Save controls before the modal.
+    submitQuote: { role: 'button', name: /submit|create quote|create$/i } as SelectorSpec,
     saveChanges: { role: 'button', name: /save changes/i } as SelectorSpec,
     medicalTab: { role: 'tab', name: /medical/i } as SelectorSpec,
     visionTab: { role: 'tab', name: /vision/i } as SelectorSpec,
