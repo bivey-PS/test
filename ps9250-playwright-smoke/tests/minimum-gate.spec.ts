@@ -4,6 +4,7 @@ import { env, uniqueRfpName } from './helpers/env';
 import { AppShell, GroupsPage, expectNoServerError } from './helpers/pages';
 import { selectors } from './helpers/selectors';
 import { resolve } from './helpers/resolve';
+import { anyPlanInCarrierColumn } from './helpers/quotes-grid-match';
 
 /**
  * PS-9250 Minimum Gate (must pass).
@@ -130,12 +131,29 @@ test.describe('PS-9250 Minimum Gate', () => {
     });
 
     await test.step('S3.13 Create New Quote → upload SBC PDF', async () => {
-      test.skip(!fs.existsSync(env.sbcPdfPath), `SBC fixture not found at ${env.sbcPdfPath}; set SBC_PDF_PATH.`);
+      // Fail closed: test.skip() here used to mark the whole Minimum Gate as
+      // skipped (CI green) after S1–S3.12 had already mutated an RFP — even
+      // though the default sbc-sample.pdf fixture is not shipped in-repo.
+      if (!fs.existsSync(env.sbcPdfPath)) {
+        throw new Error(
+          `SBC fixture not found at ${env.sbcPdfPath}. Set SBC_PDF_PATH or place tests/fixtures/sbc-sample.pdf — Minimum Gate cannot soft-skip quote upload.`,
+        );
+      }
       await resolve(page, selectors.quotes.fileInput).first().setInputFiles(env.sbcPdfPath);
     });
 
     await test.step('S3.14 Create New Quote → submit → Quote - Medical opens', async () => {
-      await resolve(page, selectors.quotes.submitQuote).first().click();
+      // Prefer the Create New Quote modal button — /save/i on submitQuote would
+      // otherwise match earlier page-level Save controls via .first().
+      const dialog = page.locator('.bootbox.modal.in, [role="dialog"], .modal.show').filter({
+        hasText: /Create New Quote/i,
+      });
+      const submitInDialog = dialog.getByRole('button', { name: /submit|create/i }).first();
+      if (await submitInDialog.isVisible().catch(() => false)) {
+        await submitInDialog.click();
+      } else {
+        await resolve(page, selectors.quotes.submitQuote).first().click();
+      }
       await page.waitForLoadState('networkidle');
       await expectNoServerError(page);
     });
@@ -151,10 +169,26 @@ test.describe('PS-9250 Minimum Gate', () => {
     await test.step('S3.16 Medical quotes grid → Aetna National column → 1 - Silver 5000 ValueCare', async () => {
       const grid = resolve(page, selectors.quotes.grid).first();
       await expect(grid).toBeVisible();
-      // Require the plan fragment inside the grid — a bare grid visibility check
-      // false-PASSed when the quote/plan never landed.
-      await expect(grid.getByText(/Silver\s*5000\s*ValueCare/i).first()).toBeVisible();
-      await expect(grid.getByText(/Aetna/i).first()).toBeVisible();
+      // Independent Aetna + plan text checks false-PASSed when the plan only
+      // existed under another carrier while Aetna remained a column header.
+      const aetnaHeader = grid.getByText(/Aetna(\s+National)?/i).first();
+      await expect(aetnaHeader).toBeVisible();
+      const headerBox = await aetnaHeader.boundingBox();
+      expect(headerBox, 'Aetna column header must be measurable').toBeTruthy();
+
+      const plan = grid.getByText(/Silver\s*5000\s*ValueCare/i);
+      const planCount = await plan.count();
+      expect(planCount, 'Plan "Silver 5000 ValueCare" not found on Medical quotes grid').toBeGreaterThan(0);
+
+      const planBoxes = [];
+      for (let i = 0; i < planCount; i++) {
+        const box = await plan.nth(i).boundingBox();
+        if (box) planBoxes.push(box);
+      }
+      expect(
+        anyPlanInCarrierColumn(headerBox!, planBoxes),
+        'Plan "Silver 5000 ValueCare" must appear in the Aetna column, not only under another carrier',
+      ).toBe(true);
     });
   });
 });
