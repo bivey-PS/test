@@ -1,0 +1,212 @@
+From 08aef1964c2fe5bca562a3819c857e71877b5082 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Wed, 26 Aug 2026 17:03:03 +0000
+Subject: [PATCH 2/2] Point smoke suite at test.plansight.com and wire real
+ Auth0 login
+
+- test.plansight.com resolves/responds (www variant does not); switch default BASE_URL
+- Auth is Auth0 Universal Login (identifier-first, redirects to devauth.plansight.com)
+- Confirm login selectors against live DOM: #username -> Continue -> #password -> Continue
+- Strengthen S1.1 to assert the identifier field; S1.1 passes live
+- Verified email->password navigation live (up to password step; needs creds to finish)
+
+Co-authored-by: bivey-PS <bivey-PS@users.noreply.github.com>
+---
+ ps9250-playwright-smoke/.env.example          |  2 +-
+ ps9250-playwright-smoke/README.md             | 24 +++++++++++++------
+ ps9250-playwright-smoke/package.json          |  4 ++--
+ ps9250-playwright-smoke/playwright.config.ts  |  2 +-
+ ps9250-playwright-smoke/tests/helpers/env.ts  |  2 +-
+ .../tests/helpers/pages.ts                    | 23 ++++++++++++++----
+ .../tests/helpers/selectors.ts                | 13 ++++++----
+ .../tests/minimum-gate.spec.ts                |  2 +-
+ 8 files changed, 49 insertions(+), 23 deletions(-)
+
+diff --git a/ps9250-playwright-smoke/.env.example b/ps9250-playwright-smoke/.env.example
+index bf7df34..7872c0b 100644
+--- a/ps9250-playwright-smoke/.env.example
++++ b/ps9250-playwright-smoke/.env.example
+@@ -1,7 +1,7 @@
+ # Copy to .env and fill in. Never commit real credentials.
+ 
+ # Target environment (PS-9250 smoke target)
+-BASE_URL=https://www.test.plansight.com
++BASE_URL=https://test.plansight.com
+ 
+ # Broker test user (required for authenticated flows S1.2+, S2, S3, S4, S5, S6, S7, S9)
+ BROKER_EMAIL=
+diff --git a/ps9250-playwright-smoke/README.md b/ps9250-playwright-smoke/README.md
+index d3c7b7b..28988ae 100644
+--- a/ps9250-playwright-smoke/README.md
++++ b/ps9250-playwright-smoke/README.md
+@@ -1,6 +1,6 @@
+ # PS-9250 Smoke Test Automation (Playwright)
+ 
+-Automated smoke suite for **www.test.plansight.com**, implementing the
++Automated smoke suite for **test.plansight.com**, implementing the
+ [PS-9250](https://plansight.atlassian.net/browse/PS-9250) "Smoke Test Plan"
+ (Minimum Gate + Full Smoke S1–S10).
+ 
+@@ -76,14 +76,24 @@ All environment-specific values are injected via `.env` (see `.env.example`):
+ Tests requiring missing credentials/fixtures **skip** with a clear message rather
+ than failing, so the suite can be listed and partially run without secrets.
+ 
+-## IMPORTANT — confirm selectors before first real run
++## Authentication (confirmed live)
+ 
+-Because the live DOM of `test.plansight.com` was not available when this suite
+-was authored, the locators in `tests/helpers/selectors.ts` are **best-guess
+-placeholders** based on the PS-9250 plan and the app's stack (Laravel +
+-jQuery/DataTables). Before relying on results:
++`test.plansight.com` uses **Auth0 Universal Login** (identifier-first): the app
++redirects to `devauth.plansight.com`, where you enter the email (`#username`) →
++**Continue** → password (`#password`) → **Continue**. The `login()` helper and
++the `login.*` selectors are already wired for this real flow and verified live up
++to the password step (a valid `BROKER_*` credential completes it). Whoever runs
++the suite needs network egress to both `test.plansight.com` and
++`devauth.plansight.com`.
+ 
+-1. Run `npm run codegen` against `https://www.test.plansight.com` to capture the
++## IMPORTANT — confirm the remaining selectors before first real run
++
++The **login** selectors are confirmed against the live site. The rest of the
++locators in `tests/helpers/selectors.ts` (groups, RFP wizard, quotes, plansights,
++templates, etc.) are **best-guess placeholders** based on the PS-9250 plan and the
++app's stack (Laravel + jQuery/DataTables). Before relying on results:
++
++1. Run `npm run codegen` against `https://test.plansight.com` to capture the
+    real locators for each step.
+ 2. Update `tests/helpers/selectors.ts` (single source of truth) accordingly.
+ 3. Prefer stable attributes (`data-test`, `id`) over text where possible.
+diff --git a/ps9250-playwright-smoke/package.json b/ps9250-playwright-smoke/package.json
+index cead09b..5b92fbf 100644
+--- a/ps9250-playwright-smoke/package.json
++++ b/ps9250-playwright-smoke/package.json
+@@ -2,7 +2,7 @@
+   "name": "ps9250-playwright-smoke",
+   "version": "1.0.0",
+   "private": true,
+-  "description": "PS-9250 smoke test automation for www.test.plansight.com (Playwright)",
++  "description": "PS-9250 smoke test automation for test.plansight.com (Playwright)",
+   "scripts": {
+     "test": "playwright test",
+     "test:min-gate": "playwright test --grep @min-gate",
+@@ -10,7 +10,7 @@
+     "test:ui": "playwright test --ui",
+     "list": "playwright test --list",
+     "report": "playwright show-report",
+-    "codegen": "playwright codegen https://www.test.plansight.com",
++    "codegen": "playwright codegen https://test.plansight.com",
+     "typecheck": "tsc --noEmit",
+     "install:browsers": "playwright install --with-deps chromium"
+   },
+diff --git a/ps9250-playwright-smoke/playwright.config.ts b/ps9250-playwright-smoke/playwright.config.ts
+index c3106b8..5db0a38 100644
+--- a/ps9250-playwright-smoke/playwright.config.ts
++++ b/ps9250-playwright-smoke/playwright.config.ts
+@@ -3,7 +3,7 @@ import * as dotenv from 'dotenv';
+ 
+ dotenv.config();
+ 
+-const BASE_URL = process.env.BASE_URL ?? 'https://www.test.plansight.com';
++const BASE_URL = process.env.BASE_URL ?? 'https://test.plansight.com';
+ 
+ export default defineConfig({
+   testDir: './tests',
+diff --git a/ps9250-playwright-smoke/tests/helpers/env.ts b/ps9250-playwright-smoke/tests/helpers/env.ts
+index bfe59fa..91c4f81 100644
+--- a/ps9250-playwright-smoke/tests/helpers/env.ts
++++ b/ps9250-playwright-smoke/tests/helpers/env.ts
+@@ -6,7 +6,7 @@ import * as path from 'path';
+  * folder is dropped into the `plansight` repo.
+  */
+ export const env = {
+-  baseUrl: process.env.BASE_URL ?? 'https://www.test.plansight.com',
++  baseUrl: process.env.BASE_URL ?? 'https://test.plansight.com',
+ 
+   broker: {
+     email: process.env.BROKER_EMAIL ?? '',
+diff --git a/ps9250-playwright-smoke/tests/helpers/pages.ts b/ps9250-playwright-smoke/tests/helpers/pages.ts
+index 948cbe5..79b2788 100644
+--- a/ps9250-playwright-smoke/tests/helpers/pages.ts
++++ b/ps9250-playwright-smoke/tests/helpers/pages.ts
+@@ -17,14 +17,27 @@ export class LoginPage {
+   }
+ 
+   async expectLoginFormVisible() {
+-    // S1.1 — login page loads, form visible, no 500
+-    await expect(resolve(this.page, selectors.login.form)).toBeVisible();
++    // S1.1 — login page loads, no 500, email/identifier field visible
++    await expect(resolve(this.page, selectors.login.email).first()).toBeVisible();
+   }
+ 
++  /**
++   * Handles Plansight's email-first, two-step login:
++   *   Email address -> Continue -> Password -> submit.
++   * Also tolerates a single-page form (fills password if already present).
++   */
+   async login(email: string, password: string) {
+-    await resolve(this.page, selectors.login.email).fill(email);
+-    await resolve(this.page, selectors.login.password).fill(password);
+-    await resolve(this.page, selectors.login.submit).click();
++    await resolve(this.page, selectors.login.email).first().fill(email);
++
++    const passwordField = resolve(this.page, selectors.login.password).first();
++    if (!(await passwordField.isVisible().catch(() => false))) {
++      // Two-step: advance past the email step.
++      await resolve(this.page, selectors.login.continueButton).first().click();
++      await passwordField.waitFor({ state: 'visible', timeout: 20_000 });
++    }
++
++    await passwordField.fill(password);
++    await resolve(this.page, selectors.login.submit).first().click();
+     await this.page.waitForLoadState('networkidle');
+   }
+ }
+diff --git a/ps9250-playwright-smoke/tests/helpers/selectors.ts b/ps9250-playwright-smoke/tests/helpers/selectors.ts
+index 548a179..590f4de 100644
+--- a/ps9250-playwright-smoke/tests/helpers/selectors.ts
++++ b/ps9250-playwright-smoke/tests/helpers/selectors.ts
+@@ -4,7 +4,7 @@
+  * IMPORTANT (for the reviewer wiring this into `plansight`):
+  * These selectors are best-guess placeholders derived from the PS-9250 plan and
+  * the app's known stack (Laravel + jQuery/DataTables). Confirm each against the
+- * real DOM on www.test.plansight.com (use `npm run codegen` to capture real
++ * real DOM on test.plansight.com (use `npm run codegen` to capture real
+  * locators) and update values here in ONE place. Prefer stable attributes
+  * (data-test / id) over text where possible.
+  *
+@@ -26,10 +26,13 @@ export type SelectorSpec =
+ 
+ export const selectors = {
+   login: {
+-    // TODO: confirm against real login page
+-    email: { label: /email/i } as SelectorSpec,
+-    password: { label: /password/i } as SelectorSpec,
+-    submit: { role: 'button', name: /log ?in|sign ?in/i } as SelectorSpec,
++    // Confirmed against https://test.plansight.com (2026-08-26): auth is Auth0
++    // Universal Login (redirects to devauth.plansight.com), identifier-first:
++    //   #username -> "Continue" -> #password -> "Continue".
++    email: { css: '#username' } as SelectorSpec,
++    continueButton: { role: 'button', name: /continue|next/i } as SelectorSpec,
++    password: { css: '#password' } as SelectorSpec,
++    submit: { role: 'button', name: /continue|log ?in|sign ?in|submit/i } as SelectorSpec,
+     form: { css: 'form' } as SelectorSpec,
+   },
+   shell: {
+diff --git a/ps9250-playwright-smoke/tests/minimum-gate.spec.ts b/ps9250-playwright-smoke/tests/minimum-gate.spec.ts
+index 6ad1bb2..e4e96a4 100644
+--- a/ps9250-playwright-smoke/tests/minimum-gate.spec.ts
++++ b/ps9250-playwright-smoke/tests/minimum-gate.spec.ts
+@@ -13,7 +13,7 @@ import { resolve } from './helpers/resolve';
+  * upload the SBC doc, let AI process, and confirm it lands in the Medical grid.
+  *
+  * Selectors are best-guess (see helpers/selectors.ts). Confirm against
+- * www.test.plansight.com with `npm run codegen` and update selectors.ts.
++ * test.plansight.com with `npm run codegen` and update selectors.ts.
+  */
+ test.describe('PS-9250 Minimum Gate', () => {
+   test('Broker can create an RFP and add a Medical quote end-to-end', { tag: '@min-gate' }, async ({ broker }) => {
+-- 
+2.43.0
+
