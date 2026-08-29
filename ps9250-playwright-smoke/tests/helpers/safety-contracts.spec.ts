@@ -2,6 +2,10 @@ import { test, expect } from '@playwright/test';
 import { selectors } from './selectors';
 import { GroupsPage } from './pages';
 import { anyPlanInCarrierColumn } from './quotes-grid-match';
+import {
+  isMedicalQuotesGridUrl,
+  quoteDocumentNameFragment,
+} from './quote-medical';
 
 /**
  * Offline contracts that lock in false-PASS / wrong-record fixes without
@@ -49,5 +53,26 @@ test.describe('smoke safety contracts', () => {
     expect(anyPlanInCarrierColumn(aetnaHeader, [planUnderAetna])).toBe(true);
     expect(anyPlanInCarrierColumn(aetnaHeader, [planUnderOther])).toBe(false);
     expect(anyPlanInCarrierColumn(aetnaHeader, [planUnderOther, planUnderAetna])).toBe(true);
+  });
+
+  test('S3.16 requires Medical quotes grid URL (not Quote create)', () => {
+    expect(
+      isMedicalQuotesGridUrl(
+        'https://test.plansight.com/app/group/ace/none#planGroupQuoteCreate/medical',
+      ),
+    ).toBe(false);
+    expect(
+      isMedicalQuotesGridUrl('https://test.plansight.com/app/group/ace/abc#gridInit/medical'),
+    ).toBe(true);
+    expect(
+      isMedicalQuotesGridUrl('https://test.plansight.com/app/group/ace/abc#gridInit/dental'),
+    ).toBe(false);
+  });
+
+  test('document dropdown selector targets Plansight select2 container', () => {
+    expect(selectors.quotes.documentDropdown).toMatchObject({
+      css: '#select2-documentSelect-container',
+    });
+    expect(quoteDocumentNameFragment('/tmp/fixtures/sbc-sample.pdf')).toBe('sbc-sample.pdf');
   });
 });

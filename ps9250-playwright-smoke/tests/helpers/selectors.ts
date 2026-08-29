@@ -87,10 +87,14 @@ export const selectors = {
     // Do not match bare "Save" — that hits page-level Save controls before the modal.
     submitQuote: { role: 'button', name: /submit|create quote|create$/i } as SelectorSpec,
     saveChanges: { role: 'button', name: /save changes/i } as SelectorSpec,
+    // Confirmed against Plansight Quote - Medical (select2 document source).
+    documentDropdown: { css: '#select2-documentSelect-container' } as SelectorSpec,
     medicalTab: { role: 'tab', name: /medical/i } as SelectorSpec,
     visionTab: { role: 'tab', name: /vision/i } as SelectorSpec,
     dentalTab: { role: 'tab', name: /dental/i } as SelectorSpec,
-    grid: { css: 'table, .quotes-grid, [data-test="quotes-grid"]' } as SelectorSpec,
+    // Prefer explicit quotes-grid markers. Bare `table` is allowed only after
+    // S3.16 asserts `#gridInit/medical` (Quote create also has tables).
+    grid: { css: '[data-test="quotes-grid"], .quotes-grid, table' } as SelectorSpec,
   },
   plansights: {
     view: { css: '[data-test="plansights"], .plansights' } as SelectorSpec,

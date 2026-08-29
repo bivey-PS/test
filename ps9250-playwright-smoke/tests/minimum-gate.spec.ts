@@ -5,6 +5,10 @@ import { AppShell, GroupsPage, expectNoServerError } from './helpers/pages';
 import { selectors } from './helpers/selectors';
 import { resolve } from './helpers/resolve';
 import { anyPlanInCarrierColumn } from './helpers/quotes-grid-match';
+import {
+  finishQuoteMedicalAndReturnToGrid,
+  isMedicalQuotesGridUrl,
+} from './helpers/quote-medical';
 
 /**
  * PS-9250 Minimum Gate (must pass).
@@ -159,14 +163,18 @@ test.describe('PS-9250 Minimum Gate', () => {
     });
 
     await test.step('S3.15 Quote - Medical → wait for AI processing → select document → Save Changes → close', async () => {
-      // AI/Planfacts processing can take a while; wait for a Save Changes affordance.
-      // Swallowing the wait used to leave Save unclicked while the step PASSed.
-      const save = resolve(page, selectors.quotes.saveChanges).first();
-      await save.waitFor({ state: 'visible', timeout: 60_000 });
-      await save.click();
+      // Save Changes is visible before AI finishes. Skipping document select +
+      // close left the suite on Quote create, where carrier/filename text could
+      // satisfy a loose S3.16 table scrape without ever reaching the Medical grid.
+      await finishQuoteMedicalAndReturnToGrid(page);
     });
 
     await test.step('S3.16 Medical quotes grid → Aetna National column → 1 - Silver 5000 ValueCare', async () => {
+      expect(
+        isMedicalQuotesGridUrl(page.url()),
+        `S3.16 must run on #gridInit/medical, got: ${page.url()}`,
+      ).toBe(true);
+
       const grid = resolve(page, selectors.quotes.grid).first();
       await expect(grid).toBeVisible();
       // Independent Aetna + plan text checks false-PASSed when the plan only
