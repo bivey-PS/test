@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { test, expect } from '@playwright/test';
 import { selectors } from './selectors';
 import { GroupsPage } from './pages';
@@ -74,5 +76,14 @@ test.describe('smoke safety contracts', () => {
       css: '#select2-documentSelect-container',
     });
     expect(quoteDocumentNameFragment('/tmp/fixtures/sbc-sample.pdf')).toBe('sbc-sample.pdf');
+  });
+
+  test('Minimum Gate overrides default 90s timeout so S3.15 AI wait (600s) can finish', () => {
+    const source = fs.readFileSync(
+      path.join(__dirname, '..', 'minimum-gate.spec.ts'),
+      'utf8',
+    );
+    expect(source).toMatch(/test\.setTimeout\(\s*20\s*\*\s*60\s*\*\s*1000\s*\)/);
+    expect(source).toMatch(/tag:\s*['"]@min-gate['"]/);
   });
 });

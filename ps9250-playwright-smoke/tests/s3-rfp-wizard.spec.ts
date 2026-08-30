@@ -47,7 +47,10 @@ test.describe('S3 — RFP Wizard (Full Smoke)', () => {
     await resolve(broker, selectors.rfpWizard.saveAndContinue).first().click();
 
     const medical = resolve(broker, selectors.rfpWizard.benefitTypeMedical).first();
-    if (await medical.isVisible().catch(() => false)) await medical.click();
+    // Fail closed — soft-skipping a missing Medical control false-PASSed this
+    // step when Benefit Types never rendered (same class of bug fixed in Minimum Gate S3.3).
+    await expect(medical).toBeVisible();
+    await medical.click();
     await resolve(broker, selectors.rfpWizard.saveAndContinue).first().click();
     await expectNoServerError(broker);
   });

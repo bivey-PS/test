@@ -21,7 +21,11 @@ import {
  * test.plansight.com with `npm run codegen` and update selectors.ts.
  */
 test.describe('PS-9250 Minimum Gate', () => {
+  // Default playwright.config timeout (90s) cannot cover S3.15: AI processing
+  // alone waits up to 600s, plus document select / save / close / S3.16.
+  // Without a per-test override the Minimum Gate always aborts mid-AI wait.
   test('Broker can create an RFP and add a Medical quote end-to-end', { tag: '@min-gate' }, async ({ broker }) => {
+    test.setTimeout(20 * 60 * 1000);
     const page = broker;
     const shell = new AppShell(page);
     const groups = new GroupsPage(page);
