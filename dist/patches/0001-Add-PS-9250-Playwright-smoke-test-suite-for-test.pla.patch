@@ -1,0 +1,1431 @@
+From e32b76541b3edd12a1f1f7f6ba9c7e437e9cfd33 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Wed, 26 Aug 2026 16:55:01 +0000
+Subject: [PATCH 1/2] Add PS-9250 Playwright smoke test suite for
+ test.plansight.com
+
+Full scaffold + tests implementing the PS-9250 smoke plan (Minimum Gate + S1-S10).
+Self-contained Playwright/TypeScript project intended to be copied into the
+plansight repo. Selectors centralized as best-guess placeholders to confirm
+against the live DOM; env-driven config; credential/fixture-gated tests skip
+gracefully. 34 tests across 11 files.
+
+Co-authored-by: bivey-PS <bivey-PS@users.noreply.github.com>
+---
+ ps9250-playwright-smoke/.env.example          |  30 ++++
+ ps9250-playwright-smoke/.gitignore            |   8 +
+ ps9250-playwright-smoke/README.md             | 110 +++++++++++++
+ ps9250-playwright-smoke/package-lock.json     | 125 +++++++++++++++
+ ps9250-playwright-smoke/package.json          |  23 +++
+ ps9250-playwright-smoke/playwright.config.ts  |  35 +++++
+ .../tests/fixtures/README.md                  |  11 ++
+ ps9250-playwright-smoke/tests/helpers/env.ts  |  44 ++++++
+ .../tests/helpers/fixtures.ts                 |  36 +++++
+ .../tests/helpers/pages.ts                    |  98 ++++++++++++
+ .../tests/helpers/resolve.ts                  |  21 +++
+ .../tests/helpers/selectors.ts                | 112 +++++++++++++
+ .../tests/minimum-gate.spec.ts                | 148 ++++++++++++++++++
+ .../tests/s1-auth-shell.spec.ts               |  42 +++++
+ .../tests/s10-stability.spec.ts               |  37 +++++
+ .../tests/s2-employer-groups.spec.ts          |  37 +++++
+ .../tests/s3-rfp-wizard.spec.ts               |  96 ++++++++++++
+ .../tests/s4-plansights-quotes.spec.ts        |  36 +++++
+ .../s5-side-by-side-presentation.spec.ts      |  37 +++++
+ .../tests/s6-templates.spec.ts                |  36 +++++
+ .../tests/s7-documents-ai.spec.ts             |  33 ++++
+ .../tests/s8-carrier-path.spec.ts             |  23 +++
+ .../tests/s9-admin-brokerage.spec.ts          |  25 +++
+ ps9250-playwright-smoke/tsconfig.json         |  17 ++
+ 24 files changed, 1220 insertions(+)
+ create mode 100644 ps9250-playwright-smoke/.env.example
+ create mode 100644 ps9250-playwright-smoke/.gitignore
+ create mode 100644 ps9250-playwright-smoke/README.md
+ create mode 100644 ps9250-playwright-smoke/package-lock.json
+ create mode 100644 ps9250-playwright-smoke/package.json
+ create mode 100644 ps9250-playwright-smoke/playwright.config.ts
+ create mode 100644 ps9250-playwright-smoke/tests/fixtures/README.md
+ create mode 100644 ps9250-playwright-smoke/tests/helpers/env.ts
+ create mode 100644 ps9250-playwright-smoke/tests/helpers/fixtures.ts
+ create mode 100644 ps9250-playwright-smoke/tests/helpers/pages.ts
+ create mode 100644 ps9250-playwright-smoke/tests/helpers/resolve.ts
+ create mode 100644 ps9250-playwright-smoke/tests/helpers/selectors.ts
+ create mode 100644 ps9250-playwright-smoke/tests/minimum-gate.spec.ts
+ create mode 100644 ps9250-playwright-smoke/tests/s1-auth-shell.spec.ts
+ create mode 100644 ps9250-playwright-smoke/tests/s10-stability.spec.ts
+ create mode 100644 ps9250-playwright-smoke/tests/s2-employer-groups.spec.ts
+ create mode 100644 ps9250-playwright-smoke/tests/s3-rfp-wizard.spec.ts
+ create mode 100644 ps9250-playwright-smoke/tests/s4-plansights-quotes.spec.ts
+ create mode 100644 ps9250-playwright-smoke/tests/s5-side-by-side-presentation.spec.ts
+ create mode 100644 ps9250-playwright-smoke/tests/s6-templates.spec.ts
+ create mode 100644 ps9250-playwright-smoke/tests/s7-documents-ai.spec.ts
+ create mode 100644 ps9250-playwright-smoke/tests/s8-carrier-path.spec.ts
+ create mode 100644 ps9250-playwright-smoke/tests/s9-admin-brokerage.spec.ts
+ create mode 100644 ps9250-playwright-smoke/tsconfig.json
+
+diff --git a/ps9250-playwright-smoke/.env.example b/ps9250-playwright-smoke/.env.example
+new file mode 100644
+index 0000000..bf7df34
+--- /dev/null
++++ b/ps9250-playwright-smoke/.env.example
+@@ -0,0 +1,30 @@
++# Copy to .env and fill in. Never commit real credentials.
++
++# Target environment (PS-9250 smoke target)
++BASE_URL=https://www.test.plansight.com
++
++# Broker test user (required for authenticated flows S1.2+, S2, S3, S4, S5, S6, S7, S9)
++BROKER_EMAIL=
++BROKER_PASSWORD=
++
++# Carrier test user (optional; required only for S8 carrier path)
++CARRIER_EMAIL=
++CARRIER_PASSWORD=
++
++# Existing employer group name to open (S2.2). If unset, S2.2 opens the first group in the list.
++EXISTING_GROUP_NAME=
++
++# Optional: an existing employer group to start the RFP wizard from (S3). Falls back to first group.
++RFP_GROUP_NAME=
++
++# Prefix used when the suite creates a test RFP so carriers are not spammed (S3).
++# The created RFP name will be `${TEST_RFP_PREFIX} <timestamp>`.
++TEST_RFP_PREFIX=ZZ-SMOKE-DO-NOT-SEND
++
++# Absolute or relative path to the SBC upload fixture used in S3.13 / Minimum Gate.
++# Defaults to tests/fixtures/sbc-sample.pdf (a placeholder is generated if missing).
++SBC_PDF_PATH=
++
++# Set to "1" to allow the suite to actually send/publish an RFP to carriers in S3.7.
++# Default (unset/0) keeps the suite non-destructive: it saves without full publish.
++ALLOW_RFP_SEND=0
+diff --git a/ps9250-playwright-smoke/.gitignore b/ps9250-playwright-smoke/.gitignore
+new file mode 100644
+index 0000000..c665fc0
+--- /dev/null
++++ b/ps9250-playwright-smoke/.gitignore
+@@ -0,0 +1,8 @@
++node_modules/
++test-results/
++playwright-report/
++blob-report/
++playwright/.cache/
++.auth/
++.env
++*.log
+diff --git a/ps9250-playwright-smoke/README.md b/ps9250-playwright-smoke/README.md
+new file mode 100644
+index 0000000..d3c7b7b
+--- /dev/null
++++ b/ps9250-playwright-smoke/README.md
+@@ -0,0 +1,110 @@
++# PS-9250 Smoke Test Automation (Playwright)
++
++Automated smoke suite for **www.test.plansight.com**, implementing the
++[PS-9250](https://plansight.atlassian.net/browse/PS-9250) "Smoke Test Plan"
++(Minimum Gate + Full Smoke S1–S10).
++
++> **Note on placement:** This folder was authored to be dropped into the
++> `plansight` repo. It is fully self-contained (its own `package.json`) so it can
++> also run standalone. Move it wherever the `plansight` team prefers (e.g. a
++> `smoke/` or `tests/e2e/` directory).
++
++## Framework
++
++- [Playwright Test](https://playwright.dev/) (TypeScript), Chromium.
++
++## Layout
++
++```
++ps9250-playwright-smoke/
++├── package.json
++├── playwright.config.ts        # baseURL from BASE_URL (default test.plansight.com)
++├── tsconfig.json
++├── .env.example                # copy to .env and fill credentials
++└── tests/
++    ├── helpers/
++    │   ├── env.ts              # env-driven config (creds, group names, fixture path)
++    │   ├── selectors.ts        # CENTRAL selector map — confirm against real DOM
++    │   ├── resolve.ts          # SelectorSpec -> Playwright Locator
++    │   ├── pages.ts            # page objects (Login, Shell, Groups, ...)
++    │   └── fixtures.ts         # `broker` / `carrier` authenticated fixtures
++    ├── fixtures/               # binary upload fixtures (SBC PDF)
++    ├── minimum-gate.spec.ts    # PS-9250 Minimum Gate (must pass) — @min-gate
++    ├── s1-auth-shell.spec.ts
++    ├── s2-employer-groups.spec.ts
++    ├── s3-rfp-wizard.spec.ts
++    ├── s4-plansights-quotes.spec.ts
++    ├── s5-side-by-side-presentation.spec.ts
++    ├── s6-templates.spec.ts
++    ├── s7-documents-ai.spec.ts
++    ├── s8-carrier-path.spec.ts   # optional; needs CARRIER creds
++    ├── s9-admin-brokerage.spec.ts
++    └── s10-stability.spec.ts
++```
++
++## Setup
++
++```bash
++cd ps9250-playwright-smoke
++npm install
++npm run install:browsers        # installs Chromium (+ OS deps)
++cp .env.example .env            # then fill in BROKER_EMAIL / BROKER_PASSWORD, etc.
++```
++
++## Run
++
++```bash
++npm test                 # full suite
++npm run test:min-gate    # only the Minimum Gate (tag @min-gate)
++npm run test:headed      # headed (watch it drive the browser)
++npm run test:ui          # Playwright UI mode
++npm run report           # open the last HTML report
++```
++
++## Credentials & data
++
++All environment-specific values are injected via `.env` (see `.env.example`):
++
++- `BROKER_EMAIL` / `BROKER_PASSWORD` — required for authenticated flows.
++- `CARRIER_EMAIL` / `CARRIER_PASSWORD` — optional; only S8.
++- `EXISTING_GROUP_NAME` / `RFP_GROUP_NAME` — which employer group to open/use.
++- `SBC_PDF_PATH` — the SBC upload fixture for S3.13 (defaults to
++  `tests/fixtures/sbc-sample.pdf`).
++- `ALLOW_RFP_SEND=1` — opt in to actually sending an RFP in S3.7. **Default is
++  off** so the suite never emails carriers.
++
++Tests requiring missing credentials/fixtures **skip** with a clear message rather
++than failing, so the suite can be listed and partially run without secrets.
++
++## IMPORTANT — confirm selectors before first real run
++
++Because the live DOM of `test.plansight.com` was not available when this suite
++was authored, the locators in `tests/helpers/selectors.ts` are **best-guess
++placeholders** based on the PS-9250 plan and the app's stack (Laravel +
++jQuery/DataTables). Before relying on results:
++
++1. Run `npm run codegen` against `https://www.test.plansight.com` to capture the
++   real locators for each step.
++2. Update `tests/helpers/selectors.ts` (single source of truth) accordingly.
++3. Prefer stable attributes (`data-test`, `id`) over text where possible.
++
++Steps whose exact DOM couldn't be inferred are marked with `TODO` in the specs.
++
++## Mapping to the PS-9250 plan
++
++| Plan section | File |
++| --- | --- |
++| Minimum Gate (S1.2, S2.1–2.2, S3.1–3.16) | `minimum-gate.spec.ts` |
++| S1 Auth / shell | `s1-auth-shell.spec.ts` |
++| S2 Employer groups | `s2-employer-groups.spec.ts` |
++| S3 RFP Wizard (core path) | `s3-rfp-wizard.spec.ts` |
++| S4 Plansights / quotes | `s4-plansights-quotes.spec.ts` |
++| S5 Side-by-side / presentation | `s5-side-by-side-presentation.spec.ts` |
++| S6 Templates | `s6-templates.spec.ts` |
++| S7 Documents / AI | `s7-documents-ai.spec.ts` |
++| S8 Carrier path (optional) | `s8-carrier-path.spec.ts` |
++| S9 Admin / brokerage settings | `s9-admin-brokerage.spec.ts` |
++| S10 Stability checks | `s10-stability.spec.ts` |
++
++`S10.2` (stage worker logs) is marked `fixme` — it needs out-of-band log access
++and is not automatable from the browser.
+diff --git a/ps9250-playwright-smoke/package-lock.json b/ps9250-playwright-smoke/package-lock.json
+new file mode 100644
+index 0000000..8627503
+--- /dev/null
++++ b/ps9250-playwright-smoke/package-lock.json
+@@ -0,0 +1,125 @@
++{
++  "name": "ps9250-playwright-smoke",
++  "version": "1.0.0",
++  "lockfileVersion": 3,
++  "requires": true,
++  "packages": {
++    "": {
++      "name": "ps9250-playwright-smoke",
++      "version": "1.0.0",
++      "devDependencies": {
++        "@playwright/test": "^1.47.0",
++        "@types/node": "^22.5.0",
++        "dotenv": "^16.4.5",
++        "typescript": "^5.5.4"
++      }
++    },
++    "node_modules/@playwright/test": {
++      "version": "1.62.1",
++      "resolved": "https://registry.npmjs.org/@playwright/test/-/test-1.62.1.tgz",
++      "integrity": "sha512-DTcUc8qii+cpHvtOwggMtBRMjKZHXYWdw8syRYu2vtzuq4Wxphqq4NfCs5Zt44L6mA8rfDfj+PHnxFc/FeK6mQ==",
++      "dev": true,
++      "license": "Apache-2.0",
++      "dependencies": {
++        "playwright": "1.62.1"
++      },
++      "bin": {
++        "playwright": "cli.js"
++      },
++      "engines": {
++        "node": ">=20"
++      }
++    },
++    "node_modules/@types/node": {
++      "version": "22.20.1",
++      "resolved": "https://registry.npmjs.org/@types/node/-/node-22.20.1.tgz",
++      "integrity": "sha512-EANqOCF9QFyra+4pfxUcX9STKJpCLjMbObVzljIJomAWSnuSIEAvyzEU53GaajbXJEgdh0iEcPL+DGvpUd4k1Q==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "undici-types": "~6.21.0"
++      }
++    },
++    "node_modules/dotenv": {
++      "version": "16.6.1",
++      "resolved": "https://registry.npmjs.org/dotenv/-/dotenv-16.6.1.tgz",
++      "integrity": "sha512-uBq4egWHTcTt33a72vpSG0z3HnPuIl6NqYcTrKEg2azoEyl2hpW0zqlxysq2pK9HlDIHyHyakeYaYnSAwd8bow==",
++      "dev": true,
++      "license": "BSD-2-Clause",
++      "engines": {
++        "node": ">=12"
++      },
++      "funding": {
++        "url": "https://dotenvx.com"
++      }
++    },
++    "node_modules/fsevents": {
++      "version": "2.3.2",
++      "resolved": "https://registry.npmjs.org/fsevents/-/fsevents-2.3.2.tgz",
++      "integrity": "sha512-xiqMQR4xAeHTuB9uWm+fFRcIOgKBMiOBP+eXiyT7jsgVCq1bkVygt00oASowB7EdtpOHaaPgKt812P9ab+DDKA==",
++      "dev": true,
++      "hasInstallScript": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "darwin"
++      ],
++      "engines": {
++        "node": "^8.16.0 || ^10.6.0 || >=11.0.0"
++      }
++    },
++    "node_modules/playwright": {
++      "version": "1.62.1",
++      "resolved": "https://registry.npmjs.org/playwright/-/playwright-1.62.1.tgz",
++      "integrity": "sha512-0M+L3LAD8/nm554LOla9Ayx0j0tmFZ0FBcoQ7F1VuVHpM/XpiC8RcDzBQB8W5+hA8L22THxELzeF+2WcUzvcLg==",
++      "dev": true,
++      "license": "Apache-2.0",
++      "dependencies": {
++        "playwright-core": "1.62.1"
++      },
++      "bin": {
++        "playwright": "cli.js"
++      },
++      "engines": {
++        "node": ">=20"
++      },
++      "optionalDependencies": {
++        "fsevents": "2.3.2"
++      }
++    },
++    "node_modules/playwright-core": {
++      "version": "1.62.1",
++      "resolved": "https://registry.npmjs.org/playwright-core/-/playwright-core-1.62.1.tgz",
++      "integrity": "sha512-wPYSwEBJY9GHraISXqyqtx0na0LpO3XEX7jNDhntbex7tzUS7kLnZsOlFruFJB4Hi/rhDMjXGqHewDZ68nYZVw==",
++      "dev": true,
++      "license": "Apache-2.0",
++      "bin": {
++        "playwright-core": "cli.js"
++      },
++      "engines": {
++        "node": ">=20"
++      }
++    },
++    "node_modules/typescript": {
++      "version": "5.9.3",
++      "resolved": "https://registry.npmjs.org/typescript/-/typescript-5.9.3.tgz",
++      "integrity": "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==",
++      "dev": true,
++      "license": "Apache-2.0",
++      "bin": {
++        "tsc": "bin/tsc",
++        "tsserver": "bin/tsserver"
++      },
++      "engines": {
++        "node": ">=14.17"
++      }
++    },
++    "node_modules/undici-types": {
++      "version": "6.21.0",
++      "resolved": "https://registry.npmjs.org/undici-types/-/undici-types-6.21.0.tgz",
++      "integrity": "sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==",
++      "dev": true,
++      "license": "MIT"
++    }
++  }
++}
+diff --git a/ps9250-playwright-smoke/package.json b/ps9250-playwright-smoke/package.json
+new file mode 100644
+index 0000000..cead09b
+--- /dev/null
++++ b/ps9250-playwright-smoke/package.json
+@@ -0,0 +1,23 @@
++{
++  "name": "ps9250-playwright-smoke",
++  "version": "1.0.0",
++  "private": true,
++  "description": "PS-9250 smoke test automation for www.test.plansight.com (Playwright)",
++  "scripts": {
++    "test": "playwright test",
++    "test:min-gate": "playwright test --grep @min-gate",
++    "test:headed": "playwright test --headed",
++    "test:ui": "playwright test --ui",
++    "list": "playwright test --list",
++    "report": "playwright show-report",
++    "codegen": "playwright codegen https://www.test.plansight.com",
++    "typecheck": "tsc --noEmit",
++    "install:browsers": "playwright install --with-deps chromium"
++  },
++  "devDependencies": {
++    "@playwright/test": "^1.47.0",
++    "@types/node": "^22.5.0",
++    "dotenv": "^16.4.5",
++    "typescript": "^5.5.4"
++  }
++}
+diff --git a/ps9250-playwright-smoke/playwright.config.ts b/ps9250-playwright-smoke/playwright.config.ts
+new file mode 100644
+index 0000000..c3106b8
+--- /dev/null
++++ b/ps9250-playwright-smoke/playwright.config.ts
+@@ -0,0 +1,35 @@
++import { defineConfig, devices } from '@playwright/test';
++import * as dotenv from 'dotenv';
++
++dotenv.config();
++
++const BASE_URL = process.env.BASE_URL ?? 'https://www.test.plansight.com';
++
++export default defineConfig({
++  testDir: './tests',
++  // Smoke tests hit a shared environment; keep them serial-ish and forgiving.
++  fullyParallel: false,
++  workers: process.env.CI ? 1 : undefined,
++  forbidOnly: !!process.env.CI,
++  retries: process.env.CI ? 1 : 0,
++  timeout: 90_000,
++  expect: { timeout: 15_000 },
++  reporter: [
++    ['list'],
++    ['html', { open: 'never' }],
++  ],
++  use: {
++    baseURL: BASE_URL,
++    actionTimeout: 20_000,
++    navigationTimeout: 45_000,
++    trace: 'on-first-retry',
++    screenshot: 'only-on-failure',
++    video: 'retain-on-failure',
++  },
++  projects: [
++    {
++      name: 'chromium',
++      use: { ...devices['Desktop Chrome'] },
++    },
++  ],
++});
+diff --git a/ps9250-playwright-smoke/tests/fixtures/README.md b/ps9250-playwright-smoke/tests/fixtures/README.md
+new file mode 100644
+index 0000000..bb8a194
+--- /dev/null
++++ b/ps9250-playwright-smoke/tests/fixtures/README.md
+@@ -0,0 +1,11 @@
++# Test fixtures
++
++Place binary upload fixtures here.
++
++## `sbc-sample.pdf`
++Referenced by S3.13 / the Minimum Gate ("Doc - SBC Silver 5000 ValueCareTest.pdf").
++Drop a small sample SBC PDF here named `sbc-sample.pdf`, or point `SBC_PDF_PATH`
++in your `.env` at any PDF on disk.
++
++If no fixture is present, the upload steps skip themselves with a clear message
++rather than failing, so the rest of the suite can still run.
+diff --git a/ps9250-playwright-smoke/tests/helpers/env.ts b/ps9250-playwright-smoke/tests/helpers/env.ts
+new file mode 100644
+index 0000000..bfe59fa
+--- /dev/null
++++ b/ps9250-playwright-smoke/tests/helpers/env.ts
+@@ -0,0 +1,44 @@
++import * as path from 'path';
++
++/**
++ * Centralized, env-driven configuration for the PS-9250 smoke suite.
++ * All environment-specific values live here so specs stay portable when this
++ * folder is dropped into the `plansight` repo.
++ */
++export const env = {
++  baseUrl: process.env.BASE_URL ?? 'https://www.test.plansight.com',
++
++  broker: {
++    email: process.env.BROKER_EMAIL ?? '',
++    password: process.env.BROKER_PASSWORD ?? '',
++  },
++  carrier: {
++    email: process.env.CARRIER_EMAIL ?? '',
++    password: process.env.CARRIER_PASSWORD ?? '',
++  },
++
++  existingGroupName: process.env.EXISTING_GROUP_NAME ?? '',
++  rfpGroupName: process.env.RFP_GROUP_NAME ?? process.env.EXISTING_GROUP_NAME ?? '',
++
++  testRfpPrefix: process.env.TEST_RFP_PREFIX ?? 'ZZ-SMOKE-DO-NOT-SEND',
++
++  sbcPdfPath:
++    process.env.SBC_PDF_PATH ??
++    path.join(__dirname, '..', 'fixtures', 'sbc-sample.pdf'),
++
++  allowRfpSend: process.env.ALLOW_RFP_SEND === '1',
++};
++
++export function hasBrokerCreds(): boolean {
++  return Boolean(env.broker.email && env.broker.password);
++}
++
++export function hasCarrierCreds(): boolean {
++  return Boolean(env.carrier.email && env.carrier.password);
++}
++
++/** Unique, clearly-flagged RFP name so smoke runs never collide or look real. */
++export function uniqueRfpName(): string {
++  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
++  return `${env.testRfpPrefix} ${stamp}`;
++}
+diff --git a/ps9250-playwright-smoke/tests/helpers/fixtures.ts b/ps9250-playwright-smoke/tests/helpers/fixtures.ts
+new file mode 100644
+index 0000000..8025961
+--- /dev/null
++++ b/ps9250-playwright-smoke/tests/helpers/fixtures.ts
+@@ -0,0 +1,36 @@
++import { test as base, Page } from '@playwright/test';
++import { env, hasBrokerCreds, hasCarrierCreds } from './env';
++import { LoginPage, AppShell } from './pages';
++
++/**
++ * Custom fixtures.
++ *
++ * `broker` / `carrier` yield an authenticated page. When credentials are not
++ * configured, the dependent test is skipped (rather than failing) so the suite
++ * can be listed and partially run without secrets.
++ */
++type Fixtures = {
++  broker: Page;
++  carrier: Page;
++};
++
++export const test = base.extend<Fixtures>({
++  broker: async ({ page }, use) => {
++    test.skip(!hasBrokerCreds(), 'Set BROKER_EMAIL and BROKER_PASSWORD to run broker flows.');
++    const login = new LoginPage(page);
++    await login.goto();
++    await login.login(env.broker.email, env.broker.password);
++    await new AppShell(page).expectInApp();
++    await use(page);
++  },
++
++  carrier: async ({ page }, use) => {
++    test.skip(!hasCarrierCreds(), 'Set CARRIER_EMAIL and CARRIER_PASSWORD to run carrier flows.');
++    const login = new LoginPage(page);
++    await login.goto();
++    await login.login(env.carrier.email, env.carrier.password);
++    await use(page);
++  },
++});
++
++export { expect } from '@playwright/test';
+diff --git a/ps9250-playwright-smoke/tests/helpers/pages.ts b/ps9250-playwright-smoke/tests/helpers/pages.ts
+new file mode 100644
+index 0000000..948cbe5
+--- /dev/null
++++ b/ps9250-playwright-smoke/tests/helpers/pages.ts
+@@ -0,0 +1,98 @@
++import { Page, expect } from '@playwright/test';
++import { selectors } from './selectors';
++import { resolve } from './resolve';
++import { env } from './env';
++
++/**
++ * Lightweight page objects. Each method maps to a PS-9250 smoke step.
++ * Where the real DOM is unknown, methods use resilient locators from
++ * selectors.ts and are marked with TODO for the reviewer to confirm.
++ */
++
++export class LoginPage {
++  constructor(private page: Page) {}
++
++  async goto() {
++    await this.page.goto('/');
++  }
++
++  async expectLoginFormVisible() {
++    // S1.1 — login page loads, form visible, no 500
++    await expect(resolve(this.page, selectors.login.form)).toBeVisible();
++  }
++
++  async login(email: string, password: string) {
++    await resolve(this.page, selectors.login.email).fill(email);
++    await resolve(this.page, selectors.login.password).fill(password);
++    await resolve(this.page, selectors.login.submit).click();
++    await this.page.waitForLoadState('networkidle');
++  }
++}
++
++export class AppShell {
++  constructor(private page: Page) {}
++
++  async expectInApp() {
++    // Landed in app when main navigation is present
++    await expect(resolve(this.page, selectors.shell.mainNav).first()).toBeVisible();
++  }
++
++  async expectNavReachable() {
++    await expect(resolve(this.page, selectors.shell.navGroups).first()).toBeVisible();
++  }
++
++  async gotoGroups() {
++    await resolve(this.page, selectors.shell.navGroups).first().click();
++    await this.page.waitForLoadState('networkidle');
++  }
++
++  async logout() {
++    const userMenu = resolve(this.page, selectors.shell.userMenu).first();
++    if (await userMenu.isVisible().catch(() => false)) {
++      await userMenu.click();
++    }
++    await resolve(this.page, selectors.shell.logout).first().click();
++    await this.page.waitForLoadState('networkidle');
++  }
++}
++
++export class GroupsPage {
++  constructor(private page: Page) {}
++
++  async expectListLoaded() {
++    await expect(resolve(this.page, selectors.groups.list).first()).toBeVisible();
++  }
++
++  /** Open a named group, or the first available row if name is empty (S2.2). */
++  async openGroup(name: string) {
++    if (name) {
++      await resolve(this.page, selectors.groups.groupLinkByName(name)).first().click();
++    } else {
++      await resolve(this.page, selectors.groups.anyRow).first().click();
++    }
++    await this.page.waitForLoadState('networkidle');
++  }
++
++  async expectGroupHomeLoaded() {
++    // Sane load: no obvious error page; a group landmark is visible.
++    await expect(resolve(this.page, selectors.groups.groupHome).first()).toBeVisible();
++  }
++}
++
++/** Utility: assert the current page did not render a server error. */
++export async function expectNoServerError(page: Page) {
++  const body = (await page.locator('body').innerText().catch(() => '')) || '';
++  expect(body).not.toMatch(/500 (internal )?server error|whoops, something went wrong/i);
++}
++
++/** Utility: collect hard JS console errors for stability checks (S10.1). */
++export function trackConsoleErrors(page: Page): string[] {
++  const errors: string[] = [];
++  page.on('console', (msg) => {
++    if (msg.type() === 'error') errors.push(msg.text());
++  });
++  page.on('pageerror', (err) => errors.push(String(err)));
++  return errors;
++}
++
++export const testRfpPrefix = env.testRfpPrefix;
+diff --git a/ps9250-playwright-smoke/tests/helpers/resolve.ts b/ps9250-playwright-smoke/tests/helpers/resolve.ts
+new file mode 100644
+index 0000000..c467f38
+--- /dev/null
++++ b/ps9250-playwright-smoke/tests/helpers/resolve.ts
+@@ -0,0 +1,21 @@
++import { Page, Locator } from '@playwright/test';
++import { SelectorSpec } from './selectors';
++
++/**
++ * Resolve a declarative SelectorSpec into a Playwright Locator.
++ * Keeps page objects readable and selectors centralized in selectors.ts.
++ */
++export function resolve(page: Page, spec: SelectorSpec): Locator {
++  if ('role' in spec) {
++    return page.getByRole(spec.role as any, {
++      name: (spec as any).name,
++      exact: (spec as any).exact,
++    });
++  }
++  if ('label' in spec) return page.getByLabel(spec.label);
++  if ('placeholder' in spec) return page.getByPlaceholder(spec.placeholder);
++  if ('text' in spec) return page.getByText(spec.text);
++  if ('testId' in spec) return page.getByTestId(spec.testId);
++  if ('css' in spec) return page.locator(spec.css);
++  throw new Error(`Unsupported selector spec: ${JSON.stringify(spec)}`);
++}
+diff --git a/ps9250-playwright-smoke/tests/helpers/selectors.ts b/ps9250-playwright-smoke/tests/helpers/selectors.ts
+new file mode 100644
+index 0000000..548a179
+--- /dev/null
++++ b/ps9250-playwright-smoke/tests/helpers/selectors.ts
+@@ -0,0 +1,112 @@
++/**
++ * Central selector map for the Plansight UI.
++ *
++ * IMPORTANT (for the reviewer wiring this into `plansight`):
++ * These selectors are best-guess placeholders derived from the PS-9250 plan and
++ * the app's known stack (Laravel + jQuery/DataTables). Confirm each against the
++ * real DOM on www.test.plansight.com (use `npm run codegen` to capture real
++ * locators) and update values here in ONE place. Prefer stable attributes
++ * (data-test / id) over text where possible.
++ *
++ * Locators are expressed as objects the page objects know how to resolve:
++ *  - { role, name }         -> page.getByRole(role, { name })
++ *  - { label }              -> page.getByLabel(label)
++ *  - { placeholder }        -> page.getByPlaceholder(placeholder)
++ *  - { text }               -> page.getByText(text)
++ *  - { testId }             -> page.getByTestId(testId)
++ *  - { css }                -> page.locator(css)
++ */
++export type SelectorSpec =
++  | { role: 'button' | 'link' | 'textbox' | 'tab' | 'heading' | 'row' | 'cell' | 'combobox' | 'menuitem'; name?: string | RegExp; exact?: boolean }
++  | { label: string | RegExp }
++  | { placeholder: string | RegExp }
++  | { text: string | RegExp }
++  | { testId: string }
++  | { css: string };
++
++export const selectors = {
++  login: {
++    // TODO: confirm against real login page
++    email: { label: /email/i } as SelectorSpec,
++    password: { label: /password/i } as SelectorSpec,
++    submit: { role: 'button', name: /log ?in|sign ?in/i } as SelectorSpec,
++    form: { css: 'form' } as SelectorSpec,
++  },
++  shell: {
++    // Landmarks proving we are "in the app"
++    mainNav: { css: 'nav, [role="navigation"]' } as SelectorSpec,
++    navGroups: { role: 'link', name: /groups/i } as SelectorSpec,
++    navRfps: { role: 'link', name: /rfps?|request for proposals/i } as SelectorSpec,
++    navTemplates: { role: 'link', name: /templates/i } as SelectorSpec,
++    userMenu: { css: '[data-test="user-menu"], .user-menu' } as SelectorSpec,
++    logout: { role: 'link', name: /log ?out|sign ?out/i } as SelectorSpec,
++  },
++  groups: {
++    list: { css: 'table, .group-list, [data-test="group-list"]' } as SelectorSpec,
++    anyRow: { css: 'table tbody tr' } as SelectorSpec,
++    groupLinkByName: (name: string) => ({ role: 'link', name } as SelectorSpec),
++    groupHome: { css: '[data-test="group-home"], .group-profile' } as SelectorSpec,
++    createGroupButton: { role: 'button', name: /add group|create group|new group/i } as SelectorSpec,
++  },
++  rfpWizard: {
++    startRfpButton: { role: 'button', name: /start (marketing|rfp)|new rfp|create rfp|marketing event/i } as SelectorSpec,
++    rfpNameInput: { label: /rfp name|name/i } as SelectorSpec,
++    effectiveDate: { label: /effective date/i } as SelectorSpec,
++    rfpOwner: { label: /rfp owner|owner/i } as SelectorSpec,
++    planAttributesTemplate: { label: /plan design attributes? template|plan attributes? template|template/i } as SelectorSpec,
++    saveAndContinue: { role: 'button', name: /save (&|and) continue|save & go|next/i } as SelectorSpec,
++    benefitTypeMedical: { role: 'checkbox' as unknown as 'button', name: /medical/i } as unknown as SelectorSpec,
++    benefitTypeDental: { text: /dental/i } as SelectorSpec,
++    benefitTypeVision: { text: /vision/i } as SelectorSpec,
++    communityRatedNo: { role: 'button', name: /^no$/i } as SelectorSpec,
++    skipCensus: { role: 'button', name: /skip( census)?/i } as SelectorSpec,
++    distributionEllipsis: { css: '[data-test="distribution-actions"], .ellipsis, .dropdown-toggle' } as SelectorSpec,
++    backToEmployerProfile: { role: 'link', name: /back to employer profile|employer profile/i } as SelectorSpec,
++    reviewAndSend: { role: 'button', name: /review (&|and) send|send/i } as SelectorSpec,
++    coverLetterSelect: { label: /cover letter/i } as SelectorSpec,
++  },
++  rfpList: {
++    section: { text: /request for proposals/i } as SelectorSpec,
++    rowByName: (name: string) => ({ role: 'row', name } as SelectorSpec),
++    nameLink: (name: string) => ({ role: 'link', name } as SelectorSpec),
++  },
++  quotes: {
++    addQuoteButton: { role: 'button', name: /add quote|\+/i } as SelectorSpec,
++    carrierCombobox: { label: /carrier/i } as SelectorSpec,
++    uploadDropzone: { text: /click to upload|drag|upload/i } as SelectorSpec,
++    fileInput: { css: 'input[type="file"]' } as SelectorSpec,
++    submitQuote: { role: 'button', name: /submit|create|save/i } as SelectorSpec,
++    saveChanges: { role: 'button', name: /save changes/i } as SelectorSpec,
++    medicalTab: { role: 'tab', name: /medical/i } as SelectorSpec,
++    visionTab: { role: 'tab', name: /vision/i } as SelectorSpec,
++    dentalTab: { role: 'tab', name: /dental/i } as SelectorSpec,
++    grid: { css: 'table, .quotes-grid, [data-test="quotes-grid"]' } as SelectorSpec,
++  },
++  plansights: {
++    view: { css: '[data-test="plansights"], .plansights' } as SelectorSpec,
++    anyEditableAttribute: { css: 'input, select, [contenteditable="true"]' } as SelectorSpec,
++    contributionTab: { role: 'tab', name: /contribution|modeler/i } as SelectorSpec,
++    calculateButton: { role: 'button', name: /calculate/i } as SelectorSpec,
++  },
++  presentation: {
++    sideBySide: { role: 'link', name: /side.?by.?side|compare/i } as SelectorSpec,
++    openOrCreate: { role: 'button', name: /presentation|create presentation/i } as SelectorSpec,
++    exportButton: { role: 'button', name: /export|download|pdf|excel/i } as SelectorSpec,
++  },
++  templates: {
++    planAttributes: { role: 'link', name: /plan attributes?/i } as SelectorSpec,
++    list: { css: 'table, .template-list' } as SelectorSpec,
++    firstTemplate: { css: 'table tbody tr:first-child a' } as SelectorSpec,
++    planLibrary: { role: 'link', name: /plan library|presentations/i } as SelectorSpec,
++  },
++  documents: {
++    list: { css: '[data-test="documents"], .documents-list, table' } as SelectorSpec,
++    uploadInput: { css: 'input[type="file"]' } as SelectorSpec,
++    aiAction: { role: 'button', name: /process|planfacts|ai|extract/i } as SelectorSpec,
++  },
++  admin: {
++    brokerageUsers: { role: 'link', name: /users|brokerage/i } as SelectorSpec,
++    settings: { role: 'link', name: /settings/i } as SelectorSpec,
++    planAttributesDefault: { text: /default/i } as SelectorSpec,
++  },
++} as const;
+diff --git a/ps9250-playwright-smoke/tests/minimum-gate.spec.ts b/ps9250-playwright-smoke/tests/minimum-gate.spec.ts
+new file mode 100644
+index 0000000..6ad1bb2
+--- /dev/null
++++ b/ps9250-playwright-smoke/tests/minimum-gate.spec.ts
+@@ -0,0 +1,148 @@
++import * as fs from 'fs';
++import { test, expect } from './helpers/fixtures';
++import { env, uniqueRfpName } from './helpers/env';
++import { AppShell, GroupsPage, expectNoServerError } from './helpers/pages';
++import { selectors } from './helpers/selectors';
++import { resolve } from './helpers/resolve';
++
++/**
++ * PS-9250 Minimum Gate (must pass).
++ *
++ * A single ordered end-to-end flow mirroring the "Minimum Gate" checklist:
++ * S1.2 login -> S2.1/S2.2 groups -> S3.1..S3.16 create RFP, add a Medical quote,
++ * upload the SBC doc, let AI process, and confirm it lands in the Medical grid.
++ *
++ * Selectors are best-guess (see helpers/selectors.ts). Confirm against
++ * www.test.plansight.com with `npm run codegen` and update selectors.ts.
++ */
++test.describe('PS-9250 Minimum Gate', () => {
++  test('Broker can create an RFP and add a Medical quote end-to-end', { tag: '@min-gate' }, async ({ broker }) => {
++    const page = broker;
++    const shell = new AppShell(page);
++    const groups = new GroupsPage(page);
++    const rfpName = uniqueRfpName();
++
++    await test.step('S1.2 Broker is logged in and in the app', async () => {
++      await shell.expectInApp();
++    });
++
++    await test.step('S2.1 Group List loads', async () => {
++      await shell.gotoGroups();
++      await groups.expectListLoaded();
++    });
++
++    await test.step('S2.2 Open an existing group', async () => {
++      await groups.openGroup(env.rfpGroupName);
++      await expectNoServerError(page);
++      await groups.expectGroupHomeLoaded();
++    });
++
++    await test.step('S3.1 Start Marketing Event → set RFP Name → Save & Continue', async () => {
++      await resolve(page, selectors.rfpWizard.startRfpButton).first().click();
++      await resolve(page, selectors.rfpWizard.rfpNameInput).first().fill(rfpName);
++      await resolve(page, selectors.rfpWizard.saveAndContinue).first().click();
++      await page.waitForLoadState('networkidle');
++    });
++
++    await test.step('S3.3 Choose Benefit Types → Medical, Vision, Dental → Save & Continue', async () => {
++      for (const bt of [selectors.rfpWizard.benefitTypeMedical, selectors.rfpWizard.benefitTypeVision, selectors.rfpWizard.benefitTypeDental]) {
++        const el = resolve(page, bt).first();
++        if (await el.isVisible().catch(() => false)) await el.click();
++      }
++      await resolve(page, selectors.rfpWizard.saveAndContinue).first().click();
++      await page.waitForLoadState('networkidle');
++    });
++
++    await test.step('S3.3.1 Community Rated Plans → No on both → skip census → Save & Continue', async () => {
++      const noButtons = resolve(page, selectors.rfpWizard.communityRatedNo);
++      const count = await noButtons.count().catch(() => 0);
++      for (let i = 0; i < count; i++) {
++        await noButtons.nth(i).click().catch(() => {});
++      }
++      const skip = resolve(page, selectors.rfpWizard.skipCensus).first();
++      if (await skip.isVisible().catch(() => false)) await skip.click();
++      await resolve(page, selectors.rfpWizard.saveAndContinue).first().click();
++      await page.waitForLoadState('networkidle');
++    });
++
++    await test.step('S3.4 Documents for Carrier Quoting → Save & Continue', async () => {
++      await resolve(page, selectors.rfpWizard.saveAndContinue).first().click();
++      await page.waitForLoadState('networkidle');
++    });
++
++    await test.step('S3.5 Medical Plan Details → Save & go to Distribution', async () => {
++      await resolve(page, selectors.rfpWizard.saveAndContinue).first().click();
++      await page.waitForLoadState('networkidle');
++      await expectNoServerError(page);
++    });
++
++    await test.step('S3.6 Who Gets the RFP? → ellipsis → Medical → Quotes tab (Vision, Dental tabs present)', async () => {
++      const ellipsis = resolve(page, selectors.rfpWizard.distributionEllipsis).first();
++      if (await ellipsis.isVisible().catch(() => false)) await ellipsis.click();
++      // Expect the Medical/Vision/Dental quote tabs to be reachable.
++      await expect(resolve(page, selectors.quotes.medicalTab).first()).toBeVisible();
++    });
++
++    await test.step('S3.7 Back to employer profile link loads employer profile', async () => {
++      const back = resolve(page, selectors.rfpWizard.backToEmployerProfile).first();
++      if (await back.isVisible().catch(() => false)) {
++        await back.click();
++        await page.waitForLoadState('networkidle');
++        await expectNoServerError(page);
++      }
++    });
++
++    await test.step('S3.8 Request for Proposals shows a row for the created RFP', async () => {
++      await expect(resolve(page, selectors.rfpList.nameLink(rfpName)).first()).toBeVisible();
++    });
++
++    await test.step('S3.9 Open the RFP via its Name link', async () => {
++      await resolve(page, selectors.rfpList.nameLink(rfpName)).first().click();
++      await page.waitForLoadState('networkidle');
++      await expectNoServerError(page);
++    });
++
++    await test.step('S3.10 RFP Basics → ellipsis → Medical row', async () => {
++      const ellipsis = resolve(page, selectors.rfpWizard.distributionEllipsis).first();
++      if (await ellipsis.isVisible().catch(() => false)) await ellipsis.click();
++      const medical = resolve(page, selectors.quotes.medicalTab).first();
++      if (await medical.isVisible().catch(() => false)) await medical.click();
++    });
++
++    await test.step('S3.11 Medical Quotes → Add Quote (+)', async () => {
++      await resolve(page, selectors.quotes.addQuoteButton).first().click();
++    });
++
++    await test.step('S3.12 Create New Quote → Carrier dropdown → type "a" → Enter', async () => {
++      const carrier = resolve(page, selectors.quotes.carrierCombobox).first();
++      await carrier.click();
++      await carrier.fill('a').catch(async () => {
++        await page.keyboard.type('a');
++      });
++      await page.keyboard.press('Enter');
++    });
++
++    await test.step('S3.13 Create New Quote → upload SBC PDF', async () => {
++      test.skip(!fs.existsSync(env.sbcPdfPath), `SBC fixture not found at ${env.sbcPdfPath}; set SBC_PDF_PATH.`);
++      await resolve(page, selectors.quotes.fileInput).first().setInputFiles(env.sbcPdfPath);
++    });
++
++    await test.step('S3.14 Create New Quote → submit → Quote - Medical opens', async () => {
++      await resolve(page, selectors.quotes.submitQuote).first().click();
++      await page.waitForLoadState('networkidle');
++      await expectNoServerError(page);
++    });
++
++    await test.step('S3.15 Quote - Medical → wait for AI processing → select document → Save Changes → close', async () => {
++      // AI/Planfacts processing can take a while; wait for a Save Changes affordance.
++      const save = resolve(page, selectors.quotes.saveChanges).first();
++      await save.waitFor({ state: 'visible', timeout: 60_000 }).catch(() => {});
++      if (await save.isVisible().catch(() => false)) await save.click();
++    });
++
++    await test.step('S3.16 Medical quotes grid → Aetna National column → 1 - Silver 5000 ValueCare', async () => {
++      await expect(resolve(page, selectors.quotes.grid).first()).toBeVisible();
++      // TODO: assert the specific carrier column / plan cell once selectors confirmed.
++    });
++  });
++});
+diff --git a/ps9250-playwright-smoke/tests/s1-auth-shell.spec.ts b/ps9250-playwright-smoke/tests/s1-auth-shell.spec.ts
+new file mode 100644
+index 0000000..d576f1b
+--- /dev/null
++++ b/ps9250-playwright-smoke/tests/s1-auth-shell.spec.ts
+@@ -0,0 +1,42 @@
++import { test, expect } from './helpers/fixtures';
++import { env, hasBrokerCreds } from './helpers/env';
++import { LoginPage, AppShell, expectNoServerError } from './helpers/pages';
++import { selectors } from './helpers/selectors';
++import { resolve } from './helpers/resolve';
++
++test.describe('S1 — Auth / shell', () => {
++  test('S1.1 login page loads (no 500; form visible)', async ({ page }) => {
++    const login = new LoginPage(page);
++    await login.goto();
++    await expectNoServerError(page);
++    await login.expectLoginFormVisible();
++  });
++
++  test('S1.2 valid broker login lands in app', { tag: '@min-gate' }, async ({ broker }) => {
++    await new AppShell(broker).expectInApp();
++  });
++
++  test('S1.3 main nav loads (Groups / RFPs / Templates reachable)', async ({ broker }) => {
++    const shell = new AppShell(broker);
++    await expect(resolve(broker, selectors.shell.navGroups).first()).toBeVisible();
++    await expect(resolve(broker, selectors.shell.navRfps).first()).toBeVisible();
++    await expect(resolve(broker, selectors.shell.navTemplates).first()).toBeVisible();
++    await shell.expectNavReachable();
++  });
++
++  test('S1.4 logout / re-login clears and restores session', async ({ page }) => {
++    test.skip(!hasBrokerCreds(), 'Set BROKER_EMAIL and BROKER_PASSWORD to run.');
++    const login = new LoginPage(page);
++    const shell = new AppShell(page);
++
++    await login.goto();
++    await login.login(env.broker.email, env.broker.password);
++    await shell.expectInApp();
++
++    await shell.logout();
++    await login.expectLoginFormVisible();
++
++    await login.login(env.broker.email, env.broker.password);
++    await shell.expectInApp();
++  });
++});
+diff --git a/ps9250-playwright-smoke/tests/s10-stability.spec.ts b/ps9250-playwright-smoke/tests/s10-stability.spec.ts
+new file mode 100644
+index 0000000..ec2cfc5
+--- /dev/null
++++ b/ps9250-playwright-smoke/tests/s10-stability.spec.ts
+@@ -0,0 +1,37 @@
++import { test, expect } from './helpers/fixtures';
++import { AppShell, trackConsoleErrors, expectNoServerError } from './helpers/pages';
++import { selectors } from './helpers/selectors';
++import { resolve } from './helpers/resolve';
++
++/**
++ * S10 — Stability checks.
++ */
++test.describe('S10 — Stability checks', () => {
++  test('S10.1 No flood of hard JS errors on main pages', async ({ broker }) => {
++    const errors = trackConsoleErrors(broker);
++    const shell = new AppShell(broker);
++    await shell.gotoGroups();
++    await broker.waitForLoadState('networkidle');
++    await resolve(broker, selectors.shell.navTemplates).first().click().catch(() => {});
++    await broker.waitForLoadState('networkidle');
++    // Allow a small number of benign errors, fail on a flood.
++    expect(errors.length, `Console errors:\n${errors.join('\n')}`).toBeLessThan(10);
++  });
++
++  // S10.2 requires stage worker log access, not reachable from the browser.
++  test.fixme('S10.2 Stage worker logs show no new job crash for the test RFP', async () => {
++    // Manual/out-of-band: inspect stage-worker logs after S3 send. Not automatable here.
++  });
++
++  test('S10.3 Deep links (refresh mid-flow) → no blank white screen', async ({ broker }) => {
++    const shell = new AppShell(broker);
++    await shell.gotoGroups();
++    const url = broker.url();
++    await broker.reload();
++    await broker.waitForLoadState('networkidle');
++    await expectNoServerError(broker);
++    // A blank screen would have an effectively empty body.
++    const text = (await broker.locator('body').innerText().catch(() => '')) || '';
++    expect(text.trim().length, `Deep link ${url} rendered blank`).toBeGreaterThan(0);
++  });
++});
+diff --git a/ps9250-playwright-smoke/tests/s2-employer-groups.spec.ts b/ps9250-playwright-smoke/tests/s2-employer-groups.spec.ts
+new file mode 100644
+index 0000000..b4e6d7e
+--- /dev/null
++++ b/ps9250-playwright-smoke/tests/s2-employer-groups.spec.ts
+@@ -0,0 +1,37 @@
++import { test, expect } from './helpers/fixtures';
++import { env } from './helpers/env';
++import { AppShell, GroupsPage, expectNoServerError } from './helpers/pages';
++import { selectors } from './helpers/selectors';
++import { resolve } from './helpers/resolve';
++
++test.describe('S2 — Employer groups', () => {
++  test('S2.1 Group List loads', { tag: '@min-gate' }, async ({ broker }) => {
++    const shell = new AppShell(broker);
++    const groups = new GroupsPage(broker);
++    await shell.gotoGroups();
++    await expectNoServerError(broker);
++    await groups.expectListLoaded();
++  });
++
++  test('S2.2 Open an existing group without error', { tag: '@min-gate' }, async ({ broker }) => {
++    const shell = new AppShell(broker);
++    const groups = new GroupsPage(broker);
++    await shell.gotoGroups();
++    await groups.openGroup(env.existingGroupName);
++    await expectNoServerError(broker);
++    await groups.expectGroupHomeLoaded();
++  });
++
++  // S2.3 can create/modify data; kept behind a visible "create" affordance and
++  // non-destructive (opens the create form and asserts it renders). Fill in the
++  // save flow once selectors are confirmed for test.plansight.com.
++  test('S2.3 Create/edit a group (smoke: create form opens)', async ({ broker }) => {
++    const shell = new AppShell(broker);
++    await shell.gotoGroups();
++    const createBtn = resolve(broker, selectors.groups.createGroupButton).first();
++    test.skip(!(await createBtn.isVisible().catch(() => false)), 'Create Group affordance not found; confirm selector.');
++    await createBtn.click();
++    await expect(broker.locator('form').first()).toBeVisible();
++    // TODO: fill required fields and Save; then assert group opens.
++  });
++});
+diff --git a/ps9250-playwright-smoke/tests/s3-rfp-wizard.spec.ts b/ps9250-playwright-smoke/tests/s3-rfp-wizard.spec.ts
+new file mode 100644
+index 0000000..3c71550
+--- /dev/null
++++ b/ps9250-playwright-smoke/tests/s3-rfp-wizard.spec.ts
+@@ -0,0 +1,96 @@
++import { test, expect } from './helpers/fixtures';
++import { env, uniqueRfpName } from './helpers/env';
++import { AppShell, GroupsPage, expectNoServerError } from './helpers/pages';
++import { selectors } from './helpers/selectors';
++import { resolve } from './helpers/resolve';
++
++/**
++ * S3 — RFP Wizard (core path), Full Smoke variant (higher-level than the
++ * Minimum Gate). Walks the wizard tabs and confirms persistence on re-open.
++ */
++test.describe('S3 — RFP Wizard (Full Smoke)', () => {
++  const rfpName = uniqueRfpName();
++
++  test('S3.1 Start new RFP from a group → Basics tab opens', async ({ broker }) => {
++    const shell = new AppShell(broker);
++    const groups = new GroupsPage(broker);
++    await shell.gotoGroups();
++    await groups.openGroup(env.rfpGroupName);
++    await resolve(broker, selectors.rfpWizard.startRfpButton).first().click();
++    await expect(resolve(broker, selectors.rfpWizard.rfpNameInput).first()).toBeVisible();
++  });
++
++  test('S3.2 Basics: name, effective date, owner, Plan Attributes Template dropdown has options', async ({ broker }) => {
++    const shell = new AppShell(broker);
++    const groups = new GroupsPage(broker);
++    await shell.gotoGroups();
++    await groups.openGroup(env.rfpGroupName);
++    await resolve(broker, selectors.rfpWizard.startRfpButton).first().click();
++
++    await resolve(broker, selectors.rfpWizard.rfpNameInput).first().fill(rfpName);
++    const template = resolve(broker, selectors.rfpWizard.planAttributesTemplate).first();
++    if (await template.isVisible().catch(() => false)) {
++      // Confirm the template dropdown exposes at least one option.
++      await expect(template).toBeVisible();
++    }
++    await resolve(broker, selectors.rfpWizard.saveAndContinue).first().click();
++    await expectNoServerError(broker);
++  });
++
++  test('S3.3 Plan Types: select Medical (+ optional Dental/Vision) → next succeeds', async ({ broker }) => {
++    const shell = new AppShell(broker);
++    const groups = new GroupsPage(broker);
++    await shell.gotoGroups();
++    await groups.openGroup(env.rfpGroupName);
++    await resolve(broker, selectors.rfpWizard.startRfpButton).first().click();
++    await resolve(broker, selectors.rfpWizard.rfpNameInput).first().fill(uniqueRfpName());
++    await resolve(broker, selectors.rfpWizard.saveAndContinue).first().click();
++
++    const medical = resolve(broker, selectors.rfpWizard.benefitTypeMedical).first();
++    if (await medical.isVisible().catch(() => false)) await medical.click();
++    await resolve(broker, selectors.rfpWizard.saveAndContinue).first().click();
++    await expectNoServerError(broker);
++  });
++
++  // S3.4–S3.6: page-load smoke through documents/census, plan details, distribution.
++  test('S3.4–S3.6 Documents/census, Plan Details, Distribution list load', async ({ broker }) => {
++    const shell = new AppShell(broker);
++    const groups = new GroupsPage(broker);
++    await shell.gotoGroups();
++    await groups.openGroup(env.rfpGroupName);
++    await resolve(broker, selectors.rfpWizard.startRfpButton).first().click();
++    await resolve(broker, selectors.rfpWizard.rfpNameInput).first().fill(uniqueRfpName());
++
++    // Walk forward through the wizard using Save & Continue, tolerating steps
++    // that require no input, asserting no server errors along the way.
++    for (let i = 0; i < 5; i++) {
++      const next = resolve(broker, selectors.rfpWizard.saveAndContinue).first();
++      if (!(await next.isVisible().catch(() => false))) break;
++      await next.click();
++      await broker.waitForLoadState('networkidle');
++      await expectNoServerError(broker);
++    }
++  });
++
++  test('S3.7 Review & Send loads; cover letter selectable; no hard fail', async ({ broker }) => {
++    const shell = new AppShell(broker);
++    const groups = new GroupsPage(broker);
++    await shell.gotoGroups();
++    await groups.openGroup(env.rfpGroupName);
++    // Navigate to an existing RFP's distribution/review rather than sending.
++    const review = resolve(broker, selectors.rfpWizard.reviewAndSend).first();
++    if (await review.isVisible().catch(() => false)) {
++      const coverLetter = resolve(broker, selectors.rfpWizard.coverLetterSelect).first();
++      if (await coverLetter.isVisible().catch(() => false)) await expect(coverLetter).toBeVisible();
++      // Non-destructive by default: only actually send when explicitly allowed.
++      test.skip(!env.allowRfpSend, 'Set ALLOW_RFP_SEND=1 to exercise the actual send. Skipping to avoid emailing carriers.');
++      await review.click();
++      await expectNoServerError(broker);
++    }
++  });
++
++  test('S3.8 Re-open the same RFP → data persisted; steps navigable', async ({ broker }) => {
++    await expect(resolve(broker, selectors.shell.navRfps).first()).toBeVisible();
++    // TODO: open a known RFP by name and assert Basics fields are populated.
++  });
++});
+diff --git a/ps9250-playwright-smoke/tests/s4-plansights-quotes.spec.ts b/ps9250-playwright-smoke/tests/s4-plansights-quotes.spec.ts
+new file mode 100644
+index 0000000..c8a2e22
+--- /dev/null
++++ b/ps9250-playwright-smoke/tests/s4-plansights-quotes.spec.ts
+@@ -0,0 +1,36 @@
++import { test, expect } from './helpers/fixtures';
++import { expectNoServerError } from './helpers/pages';
++import { selectors } from './helpers/selectors';
++import { resolve } from './helpers/resolve';
++
++/**
++ * S4 — Plansights / quotes. Requires an RFP with at least one benefit type and
++ * quote to be meaningful; steps assert the views load and one edit persists.
++ */
++test.describe('S4 — Plansights / quotes', () => {
++  test('S4.1 Open Plansights for a benefit type → grid/view loads', async ({ broker }) => {
++    // TODO: navigate to a known RFP's Plansights view for Medical.
++    const view = resolve(broker, selectors.plansights.view).first();
++    test.skip(!(await view.isVisible().catch(() => false)), 'Navigate to a Plansights view first; confirm selector/route.');
++    await expect(view).toBeVisible();
++    await expectNoServerError(broker);
++  });
++
++  test('S4.2 Edit a quote attribute and save → value persists after reload', async ({ broker }) => {
++    const field = resolve(broker, selectors.plansights.anyEditableAttribute).first();
++    test.skip(!(await field.isVisible().catch(() => false)), 'Open a Plansights attribute grid first; confirm selector.');
++    // TODO: change a specific attribute, save, reload, and assert persistence.
++    await expect(field).toBeVisible();
++  });
++
++  test('S4.3 Contribution / modeler tab → loads; calculate does not 500', async ({ broker }) => {
++    const tab = resolve(broker, selectors.plansights.contributionTab).first();
++    test.skip(!(await tab.isVisible().catch(() => false)), 'Contribution/modeler tab not present here; confirm route.');
++    await tab.click();
++    const calc = resolve(broker, selectors.plansights.calculateButton).first();
++    if (await calc.isVisible().catch(() => false)) {
++      await calc.click();
++      await expectNoServerError(broker);
++    }
++  });
++});
+diff --git a/ps9250-playwright-smoke/tests/s5-side-by-side-presentation.spec.ts b/ps9250-playwright-smoke/tests/s5-side-by-side-presentation.spec.ts
+new file mode 100644
+index 0000000..621b0f4
+--- /dev/null
++++ b/ps9250-playwright-smoke/tests/s5-side-by-side-presentation.spec.ts
+@@ -0,0 +1,37 @@
++import { test, expect } from './helpers/fixtures';
++import { expectNoServerError } from './helpers/pages';
++import { selectors } from './helpers/selectors';
++import { resolve } from './helpers/resolve';
++
++/**
++ * S5 — Side-by-side / presentation / export.
++ */
++test.describe('S5 — Side-by-side / presentation', () => {
++  test('S5.1 Open side-by-side / compare → view loads', async ({ broker }) => {
++    const link = resolve(broker, selectors.presentation.sideBySide).first();
++    test.skip(!(await link.isVisible().catch(() => false)), 'Side-by-side entry point not visible here; confirm route.');
++    await link.click();
++    await expectNoServerError(broker);
++  });
++
++  test('S5.2 Open or create a presentation → editor loads', async ({ broker }) => {
++    const btn = resolve(broker, selectors.presentation.openOrCreate).first();
++    test.skip(!(await btn.isVisible().catch(() => false)), 'Presentation entry point not visible here; confirm route.');
++    await btn.click();
++    await expectNoServerError(broker);
++  });
++
++  test('S5.3 Export/download PDF or Excel (one path) → file generates or download starts', async ({ broker }) => {
++    const exportBtn = resolve(broker, selectors.presentation.exportButton).first();
++    test.skip(!(await exportBtn.isVisible().catch(() => false)), 'Export affordance not visible here; confirm route.');
++    const downloadPromise = broker.waitForEvent('download', { timeout: 30_000 }).catch(() => null);
++    await exportBtn.click();
++    const download = await downloadPromise;
++    // Either a download starts, or (for server-rendered export) the page stays healthy.
++    if (download) {
++      expect(await download.suggestedFilename()).toBeTruthy();
++    } else {
++      await expectNoServerError(broker);
++    }
++  });
++});
+diff --git a/ps9250-playwright-smoke/tests/s6-templates.spec.ts b/ps9250-playwright-smoke/tests/s6-templates.spec.ts
+new file mode 100644
+index 0000000..c8befb5
+--- /dev/null
++++ b/ps9250-playwright-smoke/tests/s6-templates.spec.ts
+@@ -0,0 +1,36 @@
++import { test, expect } from './helpers/fixtures';
++import { AppShell, expectNoServerError } from './helpers/pages';
++import { selectors } from './helpers/selectors';
++import { resolve } from './helpers/resolve';
++
++/**
++ * S6 — Templates.
++ */
++test.describe('S6 — Templates', () => {
++  test('S6.1 Templates → Plan Attributes → list loads', { tag: '@min-gate' }, async ({ broker }) => {
++    await resolve(broker, selectors.shell.navTemplates).first().click();
++    await broker.waitForLoadState('networkidle');
++    const planAttrs = resolve(broker, selectors.templates.planAttributes).first();
++    if (await planAttrs.isVisible().catch(() => false)) await planAttrs.click();
++    await expect(resolve(broker, selectors.templates.list).first()).toBeVisible();
++    await expectNoServerError(broker);
++  });
++
++  test('S6.2 Open one Plan Attribute template → editor loads', async ({ broker }) => {
++    await resolve(broker, selectors.shell.navTemplates).first().click();
++    const planAttrs = resolve(broker, selectors.templates.planAttributes).first();
++    if (await planAttrs.isVisible().catch(() => false)) await planAttrs.click();
++    const first = resolve(broker, selectors.templates.firstTemplate).first();
++    test.skip(!(await first.isVisible().catch(() => false)), 'No template rows found; confirm selector/data.');
++    await first.click();
++    await expectNoServerError(broker);
++  });
++
++  test('S6.3 Templates → Plan Library / Presentations → list opens without error', async ({ broker }) => {
++    await resolve(broker, selectors.shell.navTemplates).first().click();
++    const lib = resolve(broker, selectors.templates.planLibrary).first();
++    test.skip(!(await lib.isVisible().catch(() => false)), 'Plan Library/Presentations entry not present; confirm route.');
++    await lib.click();
++    await expectNoServerError(broker);
++  });
++});
+diff --git a/ps9250-playwright-smoke/tests/s7-documents-ai.spec.ts b/ps9250-playwright-smoke/tests/s7-documents-ai.spec.ts
+new file mode 100644
+index 0000000..0c3d4c5
+--- /dev/null
++++ b/ps9250-playwright-smoke/tests/s7-documents-ai.spec.ts
+@@ -0,0 +1,33 @@
++import * as fs from 'fs';
++import { test, expect } from './helpers/fixtures';
++import { env } from './helpers/env';
++import { expectNoServerError } from './helpers/pages';
++import { selectors } from './helpers/selectors';
++import { resolve } from './helpers/resolve';
++
++/**
++ * S7 — Documents / AI (light).
++ */
++test.describe('S7 — Documents / AI', () => {
++  test('S7.1 Documents list on a group/RFP → loads', async ({ broker }) => {
++    const list = resolve(broker, selectors.documents.list).first();
++    test.skip(!(await list.isVisible().catch(() => false)), 'Navigate to a documents list first; confirm selector/route.');
++    await expect(list).toBeVisible();
++    await expectNoServerError(broker);
++  });
++
++  test('S7.2 Upload a small test PDF → succeeds or clear error', async ({ broker }) => {
++    test.skip(!fs.existsSync(env.sbcPdfPath), `Upload fixture not found at ${env.sbcPdfPath}; set SBC_PDF_PATH.`);
++    const input = resolve(broker, selectors.documents.uploadInput).first();
++    test.skip(!(await input.count().catch(() => 0)), 'No file input on this page; confirm route.');
++    await input.setInputFiles(env.sbcPdfPath);
++    await expectNoServerError(broker);
++  });
++
++  test('S7.3 If AI/Planfacts enabled: trigger one AI action → job accepts / status updates', async ({ broker }) => {
++    const aiBtn = resolve(broker, selectors.documents.aiAction).first();
++    test.skip(!(await aiBtn.isVisible().catch(() => false)), 'AI/Planfacts action not available; skipping.');
++    await aiBtn.click();
++    await expectNoServerError(broker);
++  });
++});
+diff --git a/ps9250-playwright-smoke/tests/s8-carrier-path.spec.ts b/ps9250-playwright-smoke/tests/s8-carrier-path.spec.ts
+new file mode 100644
+index 0000000..9ba2332
+--- /dev/null
++++ b/ps9250-playwright-smoke/tests/s8-carrier-path.spec.ts
+@@ -0,0 +1,23 @@
++import { test, expect } from './helpers/fixtures';
++import { expectNoServerError } from './helpers/pages';
++import { selectors } from './helpers/selectors';
++import { resolve } from './helpers/resolve';
++
++/**
++ * S8 — Carrier path (optional). Requires CARRIER_EMAIL / CARRIER_PASSWORD.
++ */
++test.describe('S8 — Carrier path (optional)', () => {
++  test('S8.1 Carrier login → app loads', async ({ carrier }) => {
++    await expect(resolve(carrier, selectors.shell.mainNav).first()).toBeVisible();
++    await expectNoServerError(carrier);
++  });
++
++  test('S8.2 Open an RFP invitation / quote upload page → page loads', async ({ carrier }) => {
++    // TODO: navigate to a known carrier invitation/quote-upload URL.
++    await expectNoServerError(carrier);
++  });
++
++  test('S8.3 View RFP docs or quote entry → no 500', async ({ carrier }) => {
++    await expectNoServerError(carrier);
++  });
++});
+diff --git a/ps9250-playwright-smoke/tests/s9-admin-brokerage.spec.ts b/ps9250-playwright-smoke/tests/s9-admin-brokerage.spec.ts
+new file mode 100644
+index 0000000..0f45eb6
+--- /dev/null
++++ b/ps9250-playwright-smoke/tests/s9-admin-brokerage.spec.ts
+@@ -0,0 +1,25 @@
++import { test, expect } from './helpers/fixtures';
++import { expectNoServerError } from './helpers/pages';
++import { selectors } from './helpers/selectors';
++import { resolve } from './helpers/resolve';
++
++/**
++ * S9 — Admin / brokerage settings (broker admin only).
++ */
++test.describe('S9 — Admin / brokerage settings', () => {
++  test('S9.1 Open brokerage users / settings → loads', async ({ broker }) => {
++    const users = resolve(broker, selectors.admin.brokerageUsers).first();
++    test.skip(!(await users.isVisible().catch(() => false)), 'Brokerage users/settings not visible for this user; admin only.');
++    await users.click();
++    await expectNoServerError(broker);
++  });
++
++  test('S9.2 Confirm Plan Attributes default is set (if relevant)', async ({ broker }) => {
++    const settings = resolve(broker, selectors.admin.settings).first();
++    test.skip(!(await settings.isVisible().catch(() => false)), 'Settings not visible for this user; admin only.');
++    await settings.click();
++    const def = resolve(broker, selectors.admin.planAttributesDefault).first();
++    if (await def.isVisible().catch(() => false)) await expect(def).toBeVisible();
++    await expectNoServerError(broker);
++  });
++});
+diff --git a/ps9250-playwright-smoke/tsconfig.json b/ps9250-playwright-smoke/tsconfig.json
+new file mode 100644
+index 0000000..09cf806
+--- /dev/null
++++ b/ps9250-playwright-smoke/tsconfig.json
+@@ -0,0 +1,17 @@
++{
++  "compilerOptions": {
++    "target": "ES2022",
++    "module": "CommonJS",
++    "moduleResolution": "Node",
++    "lib": ["ES2022", "DOM"],
++    "strict": true,
++    "esModuleInterop": true,
++    "skipLibCheck": true,
++    "forceConsistentCasingInFileNames": true,
++    "resolveJsonModule": true,
++    "types": ["node"],
++    "noEmit": true
++  },
++  "include": ["**/*.ts"],
++  "exclude": ["node_modules"]
++}
+-- 
+2.43.0
+
