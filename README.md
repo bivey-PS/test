@@ -95,6 +95,33 @@ Outputs:
 - `automation-output/ps-9250-minimum-gate-report-graph.png`
 - `automation-output/ps-9250-minimum-gate-report-graph.html`
 
+### Create Employer suite
+
+Maps to PS-9250 Full Smoke **S2.3–S2.5** (create and verify a new employer group).
+
+```bash
+MFA_CODE=123456 npm run automate:create-employer
+HEADED=1 RECORD_VIDEO=1 MFA_CODE=123456 npm run automate:create-employer:ui
+```
+
+The Create Employer suite verifies:
+- **S1.2** Valid broker login → lands in app
+- **S2.1** Group List loads
+- **S2.3** Add Employer → fill form → save → employer profile loads (`#groupUpdate`)
+- **S2.4** Created employer appears in group list
+- **S2.5** Re-open created employer → loads without error
+
+Each run creates a uniquely named employer: `Automation Employer {YYYY-MM-DD} {N}`.
+
+Optional env vars:
+- `EMPLOYER_EMPLOYEE_COUNT` (default `50`)
+- `EMPLOYER_STATE` (default `UT`)
+- `EMPLOYER_PRIMARY_RENEWAL` (default `January`)
+
+Reports are written to:
+- `automation-output/create-employer-report.json`
+- `automation-output/create-employer-report.md`
+
 Login script defaults to `BASE_URL=https://test.plansight.com`. Override if needed:
 
 ```bash
@@ -141,15 +168,15 @@ On success, the script saves:
 ```
 scripts/
   lib/plansight-credentials.js # Shared broker login defaults (b.ivey@plansight.com)
-  lib/plansight-login.js # Shared login + dashboard verification helpers
-  ps-9250/               # PS-9250 Minimum Gate automation suite
-  website-automation.js  # General automation script
-  login-automation.js    # Plansight Auth0 login script
-  login-automation-ui.js # Headed UI demo with MP4 recording
+  lib/plansight-login.js       # Shared login + employer/RFP helpers
+  ps-9250/                     # PS-9250 Minimum Gate automation suite
+  create-employer/             # Create Employer automation suite
+  website-automation.js        # General automation script
+  login-automation.js          # Plansight Auth0 login script
+  login-automation-ui.js       # Headed UI demo with MP4 recording
 tests/
-  homepage.spec.ts       # Tests against playwright.dev
-  example-site.spec.ts   # Tests against example.com
-  page-object.spec.ts    # Page Object Model pattern example
+  create-employer/             # Playwright spec for Create Employer
+  ps-9250/                     # Playwright spec for PS-9250 Minimum Gate
 pages/
   home.page.ts           # Reusable page object for the homepage
 playwright.config.ts     # Playwright configuration

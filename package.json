@@ -13,7 +13,10 @@
     "automate:login:ui": "HEADED=1 node scripts/login-automation-ui.js",
     "automate:ps9250:minimum-gate": "BASE_URL=https://test.plansight.com JIRA_TICKET=PS-9250 node scripts/ps-9250/minimum-gate.js",
     "automate:ps9250:minimum-gate:ui": "BASE_URL=https://test.plansight.com HEADED=1 RECORD_VIDEO=1 JIRA_TICKET=PS-9250 node scripts/ps-9250/minimum-gate.js",
-    "automate:ps9250:minimum-gate:graph": "python3 scripts/ps-9250/generate-report-graph.py"
+    "automate:ps9250:minimum-gate:graph": "python3 scripts/ps-9250/generate-report-graph.py",
+    "automate:create-employer": "BASE_URL=https://test.plansight.com JIRA_TICKET=PS-9250 node scripts/create-employer/create-employer.js",
+    "automate:create-employer:ui": "BASE_URL=https://test.plansight.com HEADED=1 RECORD_VIDEO=1 JIRA_TICKET=PS-9250 node scripts/create-employer/create-employer.js",
+    "generate:ps8972:test-plan": "node scripts/generate-ps8972-test-plan.js"
   },
   "repository": {
     "type": "git",
@@ -27,6 +30,7 @@
   },
   "homepage": "https://github.com/bivey-ps/test#readme",
   "devDependencies": {
-    "@playwright/test": "^1.62.1"
+    "@playwright/test": "^1.62.1",
+    "exceljs": "^4.4.0"
   }
 }
