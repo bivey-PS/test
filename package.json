@@ -4,6 +4,7 @@
   "description": "Playwright website test automation",
   "scripts": {
     "test": "playwright test",
+    "test:unit": "node scripts/lib/read-page-url.test.js && node scripts/lib/record-video-failure-report.test.js",
     "test:headed": "playwright test --headed",
     "test:ui": "playwright test --ui",
     "test:report": "playwright show-report",

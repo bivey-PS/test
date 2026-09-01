@@ -17,6 +17,7 @@ const {
   saveRecording,
 } = require('./lib/plansight-login');
 const { getLoginCredentials, requireLoginPassword } = require('./lib/plansight-credentials');
+const { readPageUrl } = require('./lib/read-page-url');
 
 const BASE_URL = process.env.BASE_URL || 'https://test.plansight.com';
 const JIRA_TICKET = process.env.JIRA_TICKET;
@@ -131,14 +132,17 @@ async function runLoginAutomation() {
   } catch (error) {
     console.error('Login automation failed:', error.message);
 
+    const finalUrl = readPageUrl(page);
     const errorScreenshot = path.join(OUTPUT_DIR, 'login-error.png');
-    await page.screenshot({ path: errorScreenshot, fullPage: true }).catch(() => {});
-    console.error(`Error screenshot saved: ${errorScreenshot}`);
-    console.error(`Current URL: ${page.url()}`);
+    if (!page.isClosed()) {
+      await page.screenshot({ path: errorScreenshot, fullPage: true }).catch(() => {});
+      console.error(`Error screenshot saved: ${errorScreenshot}`);
+    }
+    console.error(`Current URL: ${finalUrl || 'unknown'}`);
 
+    let recordingPath = null;
     if (RECORD_VIDEO) {
-      await page.close().catch(() => {});
-      await saveRecording(page, 'login-recording-error').catch(() => {});
+      recordingPath = await saveRecording(page, 'login-recording-error').catch(() => null);
     }
 
     fs.writeFileSync(
@@ -147,11 +151,12 @@ async function runLoginAutomation() {
         {
           jiraTicket: JIRA_TICKET || null,
           baseUrl: BASE_URL,
-          finalUrl: page.url(),
+          finalUrl,
           username: LOGIN_USERNAME,
           timestamp: new Date().toISOString(),
           success: false,
           error: error.message,
+          recordingPath,
           benefitsVerificationReport: path.join(
             OUTPUT_DIR,
             'benefits-verification-report.json',
