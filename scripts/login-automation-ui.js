@@ -16,6 +16,7 @@ const {
   saveRecording,
 } = require('./lib/plansight-login');
 const { getLoginCredentials, requireLoginPassword } = require('./lib/plansight-credentials');
+const { assertBenefitsVerified } = require('./lib/assert-benefits-verified');
 
 const BASE_URL = process.env.BASE_URL || 'https://test.plansight.com';
 const { username: LOGIN_USERNAME, password: LOGIN_PASSWORD, mfaCode: MFA_CODE } =
@@ -51,6 +52,7 @@ async function runPostLoginFlow(page) {
     console.log(`Missing benefit rows: ${benefit.missingRows.join(', ')}`);
   }
 
+  assertBenefitsVerified(benefit);
   return benefit;
 }
 
