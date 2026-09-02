@@ -92,6 +92,66 @@ export class GroupsPage {
   }
 }
 
+/**
+ * PS-9410 — Create an Employer.
+ * Reuses the shared resolver/selectors; locators are placeholders to confirm
+ * live via `npm run codegen`.
+ */
+export class EmployerCreatePage {
+  constructor(private page: Page) {}
+
+  /** Open the create-employer form from the Groups/Employers area. */
+  async gotoCreate() {
+    await resolve(this.page, selectors.shell.navGroups).first().click();
+    await this.page.waitForLoadState('networkidle');
+    await resolve(this.page, selectors.employerCreate.createButton).first().click();
+    await this.page.waitForLoadState('networkidle');
+  }
+
+  async expectFormVisible() {
+    await expect(resolve(this.page, selectors.employerCreate.form).first()).toBeVisible();
+  }
+
+  /** Fill required fields. Optional fields are filled only if present/configured. */
+  async fillRequired(name: string) {
+    await resolve(this.page, selectors.employerCreate.nameInput).first().fill(name);
+
+    const effective = resolve(this.page, selectors.employerCreate.effectiveDate).first();
+    if (await effective.isVisible().catch(() => false)) {
+      // TODO: confirm the date format/control the real form expects.
+      await effective.fill('01/01/2027').catch(() => {});
+    }
+
+    const situs = resolve(this.page, selectors.employerCreate.situsState).first();
+    if (await situs.isVisible().catch(() => false)) {
+      await situs.fill(env.employer.situsState).catch(() => {});
+    }
+
+    const contactName = resolve(this.page, selectors.employerCreate.contactName).first();
+    if (await contactName.isVisible().catch(() => false)) {
+      await contactName.fill(env.employer.contactName).catch(() => {});
+    }
+
+    const contactEmail = resolve(this.page, selectors.employerCreate.contactEmail).first();
+    if (await contactEmail.isVisible().catch(() => false)) {
+      await contactEmail.fill(env.employer.contactEmail).catch(() => {});
+    }
+  }
+
+  async save() {
+    await resolve(this.page, selectors.employerCreate.save).first().click();
+    await this.page.waitForLoadState('networkidle');
+  }
+
+  async submitEmpty() {
+    await resolve(this.page, selectors.employerCreate.save).first().click();
+  }
+
+  validationError() {
+    return resolve(this.page, selectors.employerCreate.validationError).first();
+  }
+}
+
 /** Utility: assert the current page did not render a server error. */
 export async function expectNoServerError(page: Page) {
   const body = (await page.locator('body').innerText().catch(() => '')) || '';

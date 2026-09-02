@@ -107,6 +107,25 @@ export const selectors = {
     uploadInput: { css: 'input[type="file"]' } as SelectorSpec,
     aiAction: { role: 'button', name: /process|planfacts|ai|extract/i } as SelectorSpec,
   },
+  // PS-9410 — Create an Employer. TODO: confirm all against the live form via
+  // `npm run codegen` (field names are expected values, not yet verified live).
+  employerCreate: {
+    // Entry point (may match the groups "Add group" affordance).
+    createButton: { role: 'button', name: /add employer|create employer|add group|create group|new (employer|group)/i } as SelectorSpec,
+    form: { css: 'form' } as SelectorSpec,
+    nameInput: { label: /employer name|group name|company name|name/i } as SelectorSpec,
+    effectiveDate: { label: /effective date/i } as SelectorSpec,
+    situsState: { label: /situs|home state|state/i } as SelectorSpec,
+    industrySic: { label: /industry|sic/i } as SelectorSpec,
+    ein: { label: /ein|tax id/i } as SelectorSpec,
+    contactName: { label: /contact name|primary contact/i } as SelectorSpec,
+    contactEmail: { label: /contact email|email/i } as SelectorSpec,
+    brokerOwner: { label: /broker|owner|account manager/i } as SelectorSpec,
+    save: { role: 'button', name: /save|create|add|submit/i } as SelectorSpec,
+    cancel: { role: 'button', name: /cancel/i } as SelectorSpec,
+    validationError: { css: '.error, .invalid-feedback, [aria-invalid="true"], .field-error' } as SelectorSpec,
+  },
+
   admin: {
     brokerageUsers: { role: 'link', name: /users|brokerage/i } as SelectorSpec,
     settings: { role: 'link', name: /settings/i } as SelectorSpec,
