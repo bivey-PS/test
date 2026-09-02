@@ -22,6 +22,16 @@ export const env = {
 
   testRfpPrefix: process.env.TEST_RFP_PREFIX ?? 'ZZ-SMOKE-DO-NOT-SEND',
 
+  // PS-9410 — Create an Employer automation
+  employerPrefix: process.env.TEST_EMPLOYER_PREFIX ?? 'ZZ-AUTO-EMPLOYER',
+  allowEmployerCreate: process.env.ALLOW_EMPLOYER_CREATE === '1',
+  employer: {
+    situsState: process.env.EMPLOYER_SITUS_STATE ?? 'UT',
+    industrySic: process.env.EMPLOYER_INDUSTRY_SIC ?? '',
+    contactName: process.env.EMPLOYER_CONTACT_NAME ?? 'Smoke Tester',
+    contactEmail: process.env.EMPLOYER_CONTACT_EMAIL ?? 'smoke-employer@example.com',
+  },
+
   sbcPdfPath:
     process.env.SBC_PDF_PATH ??
     path.join(__dirname, '..', 'fixtures', 'sbc-sample.pdf'),
@@ -41,4 +51,10 @@ export function hasCarrierCreds(): boolean {
 export function uniqueRfpName(): string {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   return `${env.testRfpPrefix} ${stamp}`;
+}
+
+/** Unique, clearly-flagged employer name for the PS-9410 create-employer flow. */
+export function uniqueEmployerName(): string {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  return `${env.employerPrefix} ${stamp}`;
 }
