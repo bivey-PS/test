@@ -17,6 +17,7 @@ const {
   saveRecording,
 } = require('./lib/plansight-login');
 const { getLoginCredentials, requireLoginPassword } = require('./lib/plansight-credentials');
+const { assertBenefitsVerified } = require('./lib/assert-benefits-verified');
 
 const BASE_URL = process.env.BASE_URL || 'https://test.plansight.com';
 const JIRA_TICKET = process.env.JIRA_TICKET;
@@ -81,11 +82,7 @@ async function runLoginAutomation() {
     const cancer = await openCancerTab(page);
     const benefit = await verifyReconstructiveSurgeryBenefit(page);
 
-    if (!benefit.verified) {
-      throw new Error(
-        `Benefits verification failed. Missing rows: ${benefit.missingRows.join(', ')}`,
-      );
-    }
+    assertBenefitsVerified(benefit);
 
     await page.screenshot({
       path: path.join(OUTPUT_DIR, 'login-success.png'),
